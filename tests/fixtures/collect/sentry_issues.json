@@ -1,0 +1,15 @@
+[
+  {"id": "101", "shortId": "WEB-1A", "title": "TypeError: Cannot read properties of undefined (reading 'items')",
+   "culprit": "computeTotal(src/cart/total)", "permalink": "https://acme.sentry.io/issues/101/",
+   "count": "840", "userCount": 120, "firstSeen": "2026-10-01T09:00:00Z", "lastSeen": "2026-10-26T21:14:00Z",
+   "level": "error", "status": "unresolved",
+   "metadata": {"type": "TypeError", "value": "Cannot read properties of undefined (reading 'items')"}},
+  {"id": "102", "shortId": "WEB-1B", "title": "Error: Payment intent expired",
+   "culprit": "POST /api/checkout", "permalink": "https://acme.sentry.io/issues/102/",
+   "count": "37", "userCount": 9, "firstSeen": "2026-10-20T09:00:00Z", "lastSeen": "2026-10-26T20:00:00Z",
+   "level": "error", "status": "unresolved", "metadata": {"type": "Error", "value": "Payment intent expired"}},
+  {"id": "103", "shortId": "WEB-1C", "title": "Warning: one-off",
+   "culprit": "x", "permalink": "https://acme.sentry.io/issues/103/",
+   "count": "2", "userCount": 1, "firstSeen": "2026-10-25T09:00:00Z", "lastSeen": "2026-10-25T09:00:00Z",
+   "level": "warning", "status": "unresolved", "metadata": {}}
+]

@@ -22,5 +22,29 @@
     "build": "sonnet",
     "qa": "sonnet",
     "review": "opus"
+  },
+  "collect": {
+    "since": "14d",
+    "sentry": {
+      "enabled": true,
+      "host": "https://sentry.io",
+      "org": "my-org",
+      "project": "my-app",
+      "environment": "production",
+      "min_events": 5,
+      "min_users": 1,
+      "limit": 25
+    },
+    "posthog": {
+      "enabled": true,
+      "host": "https://eu.posthog.com",
+      "project_id": 12345,
+      "min_events": 10,
+      "min_users": 2,
+      "limit": 25,
+      "slow_lcp_ms": 2500,
+      "failure_events": ["checkout_failed", "signup_error"],
+      "signals": ["exceptions", "rageclicks", "deadclicks", "slow_pages", "failures", "surveys", "pageview_paths"]
+    }
   }
 }

@@ -58,7 +58,24 @@ Goal: a working `.claude/factory.json` and a board with the right columns.
 5. Ask what proves the code works: the commands for `verify_commands`
    (look at package.json, Makefile, pyproject, CI workflows first and
    propose them). The merge gate refuses to merge without at least one.
-6. Write `.claude/factory.json`, add `.claude/worktrees/` to `.gitignore`,
+6. **Problem sources (optional).** Detect Sentry and PostHog:
+   - Sentry: `@sentry/*` or `sentry-sdk` in dependencies, `sentry.properties`,
+     `sentry.*.config.*` files. Org and project slugs usually live in
+     `sentry.properties` or the Sentry webpack/vite plugin config.
+   - PostHog: `posthog-js`, `posthog-node`, `posthog` in dependencies. The
+     host is in the init call (`us.i.posthog.com` → `https://us.posthog.com`,
+     `eu.i.posthog.com` → `https://eu.posthog.com`); ask for the numeric
+     project id.
+   Ask which to enable. Check the tokens exist with
+   `${CLAUDE_PLUGIN_ROOT}/scripts/env-names.sh` (names only — never read
+   `.env`): `SENTRY_AUTH_TOKEN` (scopes `event:read`, `project:read`) and
+   `POSTHOG_PERSONAL_API_KEY` (scope `query:read`). If one is missing, tell
+   the user where to create it and to add it to `.env` themselves. Write a
+   `collect` block (shape in `${CLAUDE_PLUGIN_ROOT}/examples/factory.json`),
+   then test each with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/collect.py check <source>`
+   and show the result. A failed check leaves the source enabled but
+   reported as unavailable; it is not fatal to onboarding.
+7. Write `.claude/factory.json`, add `.claude/worktrees/` to `.gitignore`,
    then run `board.sh doctor` and show the result.
 
 ### `doctor`

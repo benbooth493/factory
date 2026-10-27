@@ -1,0 +1,14 @@
+{
+  "eventID": "abc",
+  "entries": [
+    {"type": "breadcrumbs", "data": {"values": []}},
+    {"type": "exception", "data": {"values": [{
+      "type": "TypeError",
+      "stacktrace": {"frames": [
+        {"filename": "node_modules/react-dom/index.js", "lineNo": 10, "function": "render", "inApp": false},
+        {"filename": "src/pages/cart.tsx", "lineNo": 88, "function": "CartPage", "inApp": true},
+        {"filename": "src/cart/total.ts", "lineNo": 42, "function": "computeTotal", "inApp": true}
+      ]}
+    }]}}
+  ]
+}
