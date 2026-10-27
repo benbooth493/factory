@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>factory shoot fixture</title>
+<style>
+  :root { --bg: #ffffff; --fg: #111111; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111111; --fg: #eeeeee; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px system-ui, sans-serif; }
+  header, main { padding: 24px; }
+  #card { border: 2px solid currentColor; padding: 16px; max-width: 480px; }
+  .tall { height: 1400px; }
+</style>
+</head>
+<body>
+<header><h1>Fixture</h1></header>
+<main>
+  <section id="card"><p id="status">loading</p></section>
+  <div class="tall"></div>
+</main>
+<script>
+  fetch('data.json').then((r) => r.json()).then((d) => {
+    document.getElementById('status').textContent = d.status;
+  });
+</script>
+</body>
+</html>

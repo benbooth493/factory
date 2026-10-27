@@ -13,12 +13,26 @@ reading anyone else's comments.
 Scripts: `B=${CLAUDE_PLUGIN_ROOT}/scripts/board.sh`,
 `G=${CLAUDE_PLUGIN_ROOT}/scripts/merge-gate.sh`.
 
+## Skills
+
+Check with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skills-ready.py --lane review`
+(exit 10 → comment which skill is missing, release, `RESULT: review #<n> blocked reason="missing skill"`).
+Review through `mattpocock-skills:code-review` (standards and correctness)
+and read the design through `mattpocock-skills:codebase-design`. If
+`ponytail:ponytail-review` is installed, run it for over-engineering;
+otherwise ask of each addition: needed at all, already in the codebase,
+smaller version possible? Over-engineering findings are reported but never
+bounce a card on their own.
+
 ## Steps
 
 1. **Pin the commit.** `gh pr view <pr> --json headRefOid,files,additions,deletions`.
    Record the head SHA. If it differs from the SHA in the latest QA PASS
-   comment, the code changed after QA: move the card back to QA
-   (`$B move <n> qa`, release, comment why) and stop.
+   comment, check what changed: `git diff --name-only <qa sha> <head>`. If
+   the only changes are QA's own evidence files under `docs/factory/runs/`,
+   review and approve the head. Anything else means the code changed after
+   QA: move the card back to QA (`$B move <n> qa`, release, comment why) and
+   stop.
 2. **Read the diff cold.** `gh pr diff <pr>`. Write down, privately, your
    hypotheses about what could be wrong before looking at comments.
 3. **Check against the issue.** Every acceptance criterion addressed; nothing
@@ -71,6 +85,10 @@ reason* in the QA skill: `${CLAUDE_PLUGIN_ROOT}/skills/qa/SKILL.md`). Then
 the bounce rule: `$B bounces <n>`;
 below `max_bounces` → `$B bounce <n>`, `$B move <n> build`; at the limit →
 `$B move <n> blocked` with a summary. `$B release <n>`.
+
+Before posting any review comment, save it to a file and run
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check-writing.py comment <file>`. If
+you edit the PR title or body, use `check-writing.py pr <file> --title "<title>"`.
 
 ## Final line
 

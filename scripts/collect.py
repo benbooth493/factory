@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""collect.py — find problems in Sentry and PostHog and file them as Backlog cards.
+"""collect.py — find problems and file them as Backlog cards.
 
 Commands (run from the repo root):
 
+  collect.py sources                        which sources are enabled, and how each runs
   collect.py check <source>                 read-only connection test
-  collect.py fetch <source> [--since 14d]   print candidates as JSON
+  collect.py fetch <source> [--since 14d]   print candidates (and raw material) as JSON
   collect.py dedupe <candidates.json>       classify each candidate against filed cards
   collect.py render <card.json>             print the issue body a card would get
-  collect.py file <card.json>               create the issue and put it in Backlog
+  collect.py file <card.json>               create (or adopt) the issue and put it in Backlog
 
-<source> is `sentry` or `posthog`.
+<source> is one of:
+  sentry        unresolved Sentry issues
+  posthog       PostHog exceptions, clicks, slow pages, failures, surveys, gaps
+  github        open issues in the repo that are not on the board (adopted, not copied)
+  prs           review and QA comments on recently merged PRs (the skill clusters them)
+  architecture  run by the skill; fetch only gathers context for the finder
 
 Exit codes: 0 ok, 1 bad usage or a GitHub error, 2 source unavailable
 (missing token, network, auth, API error), 3 source disabled in config.
@@ -34,6 +40,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -401,6 +408,280 @@ def strip_query(url: Any) -> Optional[str]:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
+# --- GitHub reads (github, prs) ---------------------------------------------
+
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+URL_RE = re.compile(r"https?://[^\s)>\]]+")
+MENTION_RE = re.compile(r"(?<![\w/@])@[A-Za-z0-9][A-Za-z0-9-]{0,38}(?![\w/@-])")
+
+
+def gh_read(*args: str) -> str:
+    """Read-only gh call. A failure means the source is unavailable, not empty."""
+    try:
+        r = subprocess.run(["gh", *args], capture_output=True, text=True)
+    except OSError as e:
+        raise Unavailable(f"cannot run gh: {e}")
+    if r.returncode != 0:
+        raise Unavailable(f"gh {' '.join(args[:2])} failed: {r.stderr.strip()[:300]}")
+    return r.stdout
+
+
+# Swappable so tests can replay recorded gh output.
+GH: Callable[..., str] = gh_read
+
+
+def gh_json(*args: str) -> Any:
+    out = GH(*args)
+    try:
+        return json.loads(out or "null")
+    except ValueError:
+        raise Unavailable(f"gh {' '.join(args[:2])} returned non-JSON output")
+
+
+def scrub(text: Any, limit: int = 1500) -> str:
+    """Drop emails and URL query strings, then trim. Comments go into cards as quotes."""
+    text = EMAIL_RE.sub("<email>", str(text or ""))
+    text = MENTION_RE.sub("@someone", text)
+    text = URL_RE.sub(lambda m: strip_query(m.group(0)) or "", text)
+    return text if len(text) <= limit else text[:limit] + " …"
+
+
+def source_block(cfg: dict, name: str) -> dict:
+    return dict((cfg.get("collect") or {}).get(name) or {})
+
+
+def need_repo(cfg: dict, source: str) -> str:
+    if not cfg.get("repo"):
+        raise LookupError(f"{source} needs `repo` in .claude/factory.json")
+    return cfg["repo"]
+
+
+def board_urls(cfg: dict) -> set:
+    """Every issue/PR URL on the board. A partial read is unavailable, never 'not on board'."""
+    data = gh_json("project", "item-list", str(cfg["project_number"]), "--owner", cfg["owner"],
+                   "--format", "json", "--limit", "1000")
+    items = (data or {}).get("items") or []
+    total = (data or {}).get("totalCount")
+    if isinstance(total, int) and total > len(items):
+        raise Unavailable(f"board read returned {len(items)} of {total} items; cannot tell what is on it")
+    return {((it.get("content") or {}).get("url") or "").rstrip("/") for it in items} - {""}
+
+
+GITHUB_KINDS = {"bug": "bug", "regression": "bug", "enhancement": "feature", "feature": "feature",
+                "performance": "perf", "perf": "perf", "ux": "ux", "refactor": "refactor",
+                "tech-debt": "refactor"}
+
+
+def github_settings(cfg: dict) -> dict:
+    s = source_block(cfg, "github")
+    s.setdefault("limit", 200)
+    s.setdefault("skip_labels", ["wontfix", "question", "duplicate", "invalid"])
+    return s
+
+
+def github_ready(cfg: dict) -> Tuple[dict, str]:
+    s = github_settings(cfg)
+    if s.get("enabled") is False:
+        raise LookupError("github is disabled (collect.github.enabled is false)")
+    return s, need_repo(cfg, "github")
+
+
+def github_check(cfg: dict) -> dict:
+    _, repo = github_ready(cfg)
+    n = len(board_urls(cfg))
+    return {"ok": True, "detail": f"read {repo} and the board ({n} items)"}
+
+
+def github_fetch(cfg: dict, days: int, since_iso: str) -> Tuple[List[dict], Dict[str, Any], Dict[str, str]]:
+    """Open issues not on the board. --since is ignored: an old issue is still open work."""
+    s, repo = github_ready(cfg)
+    on_board = board_urls(cfg)
+    limit = int(s["limit"])
+    issues = gh_json("issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit),
+                     "--json", "number,title,body,labels,url,createdAt,updatedAt") or []
+    skip = {str(x).lower() for x in s["skip_labels"]} | {COLLECTED_LABEL}
+    out = []
+    for it in issues:
+        url = (it.get("url") or "").rstrip("/")
+        names = [str(lb.get("name") if isinstance(lb, dict) else lb).lower() for lb in it.get("labels") or []]
+        if "/pull/" in url or url in on_board or skip & set(names):
+            continue
+        kind = next((GITHUB_KINDS[n] for n in names if n in GITHUB_KINDS), "task")
+        out.append(candidate(
+            "github", kind, f"github:{it['number']}", it.get("title") or f"Issue #{it['number']}",
+            number=it["number"], url=it.get("url"), adopt=True,
+            summary=scrub(it.get("body"), 600), first_seen=it.get("createdAt"), last_seen=it.get("updatedAt"),
+            evidence={"labels": names}))
+    raw = {"truncated": len(issues) >= limit, "open_issues_read": len(issues)}
+    return out, raw, {}
+
+
+# --- prs: review and QA comments on merged PRs -------------------------------
+
+BOUNCE_LABEL = "bounce:"
+CLOSES_RE = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.I)
+REASON_RE = re.compile(r"^\s*Reason:\s*([a-z_]+)", re.I | re.M)
+TRIVIAL = re.compile(r"^\s*(lgtm|thanks?|thank you|done|fixed|\+1|nit:?|ok|👍)[.!]*\s*$", re.I)
+
+
+def prs_settings(cfg: dict) -> dict:
+    s = source_block(cfg, "prs")
+    s.setdefault("limit", 30)            # merged PRs read per run
+    s.setdefault("max_comments", 40)     # per PR, newest kept
+    s.setdefault("body_chars", 1500)     # per comment
+    s.setdefault("min_prs", 2)           # a pattern must recur across this many PRs
+    return s
+
+
+def prs_ready(cfg: dict) -> Tuple[dict, str]:
+    s = prs_settings(cfg)
+    if s.get("enabled") is False:
+        raise LookupError("prs is disabled (collect.prs.enabled is false)")
+    return s, need_repo(cfg, "prs")
+
+
+def rest_budget() -> Tuple[int, int]:
+    core = (gh_json("api", "rate_limit") or {}).get("resources", {}).get("core", {})
+    return int(core.get("remaining", 0)), int(core.get("reset", 0))
+
+
+def prs_check(cfg: dict) -> dict:
+    _, repo = prs_ready(cfg)
+    remaining, _ = rest_budget()
+    return {"ok": True, "detail": f"read merged PRs in {repo}; {remaining} REST calls left this hour"}
+
+
+def role_of(body: str, state: str = "") -> str:
+    head = body.lstrip()
+    if head.startswith("🧪 QA FAIL"):
+        return "qa_fail"
+    if head.startswith("🧪 QA PASS"):
+        return "qa_pass"
+    if head.startswith("✅ Review"):
+        return "review_approved"
+    if REASON_RE.search(body) or state == "CHANGES_REQUESTED":
+        return "review_findings"
+    return "comment"
+
+
+def author_kind(user: Any) -> str:
+    user = user or {}
+    login = str(user.get("login") or "")
+    return "bot" if user.get("type") == "Bot" or login.endswith("[bot]") else "human"
+
+
+def pr_notes(repo: str, n: int, s: dict) -> List[dict]:
+    """Conversation comments, review bodies and inline review comments for one PR."""
+    calls = [("comment", f"repos/{repo}/issues/{n}/comments?per_page=100"),
+             ("review", f"repos/{repo}/pulls/{n}/reviews?per_page=100"),
+             ("inline", f"repos/{repo}/pulls/{n}/comments?per_page=100")]
+    notes = []
+    for where, path in calls:
+        for c in gh_json("api", path) or []:
+            body = (c.get("body") or "").strip()
+            role = role_of(body, c.get("state") or "")
+            if len(body) < 15 or TRIVIAL.match(body) or role == "qa_pass":
+                continue
+            note = {"where": where, "role": role, "author": author_kind(c.get("user")),
+                    "at": c.get("submitted_at") or c.get("created_at"), "body": scrub(body, int(s["body_chars"]))}
+            if c.get("path"):
+                note["path"] = c["path"]
+                note["line"] = c.get("line") or c.get("original_line")
+            notes.append(note)
+    notes.sort(key=lambda x: str(x.get("at") or ""))
+    return notes[-int(s["max_comments"]):]
+
+
+def prs_fetch(cfg: dict, days: int, since_iso: str) -> Tuple[List[dict], Dict[str, Any], Dict[str, str]]:
+    """Raw material only: the skill clusters it into patterns that recur across PRs."""
+    s, repo = prs_ready(cfg)
+    limit = int(s["limit"])
+    prs = gh_json("pr", "list", "--repo", repo, "--state", "merged", "--search", f"merged:>={since_iso[:10]}",
+                  "--limit", str(limit), "--json", "number,title,url,mergedAt,body,labels") or []
+    remaining, reset = rest_budget()
+    affordable = max(0, (remaining - 50) // 3)    # 3 REST calls per PR, keep a margin
+    truncated = len(prs) >= limit
+    if not prs:
+        return [], {"prs": [], "truncated": False, "bounce_reasons": {}}, {}
+    if affordable == 0:
+        when = time.strftime("%H:%M UTC", time.gmtime(reset)) if reset else "later"
+        raise Unavailable(f"GitHub REST budget too low ({remaining} left); try again after {when}")
+    if affordable < len(prs):
+        prs, truncated = prs[:affordable], True
+    bounces = {}
+    try:
+        recent = gh_json("issue", "list", "--repo", repo, "--state", "all", "--search", f"updated:>={since_iso[:10]}",
+                         "--limit", "300", "--json", "number,labels") or []
+        for it in recent:
+            names = [str(lb.get("name") if isinstance(lb, dict) else lb) for lb in it.get("labels") or []]
+            bounces[it["number"]] = [x for x in names if x.startswith(BOUNCE_LABEL)]
+    except Unavailable:
+        pass  # bounce labels are a bonus; the comments still stand
+    shaped, errors, reasons = [], {}, {}
+    for pr in prs:
+        try:
+            notes = pr_notes(repo, pr["number"], s)
+        except Unavailable as e:
+            errors[f"pr#{pr['number']}"] = str(e)
+            continue
+        linked = sorted({int(x) for x in CLOSES_RE.findall(pr.get("body") or "")})
+        labels = [str(lb.get("name") if isinstance(lb, dict) else lb) for lb in pr.get("labels") or []]
+        blabels = sorted({x for x in labels if x.startswith(BOUNCE_LABEL)}
+                         | {x for i in linked for x in bounces.get(i, [])})
+        for lb in blabels:
+            reasons.setdefault(lb[len(BOUNCE_LABEL):], []).append(pr["number"])
+        shaped.append({"number": pr["number"], "title": pr.get("title"), "url": pr.get("url"),
+                       "merged_at": pr.get("mergedAt"), "linked_issues": linked,
+                       "bounce_labels": blabels, "notes": notes})
+    if errors and not shaped:
+        raise Unavailable("; ".join(f"{k}: {v}" for k, v in errors.items()))
+    raw = {"prs": shaped, "truncated": truncated, "min_prs": int(s["min_prs"]),
+           "bounce_reasons": {k: sorted(set(v)) for k, v in reasons.items()}}
+    return [], raw, errors
+
+
+# --- architecture: run by the skill; the script only gathers context -----------
+
+def architecture_settings(cfg: dict) -> dict:
+    s = source_block(cfg, "architecture")
+    s.setdefault("max_findings", 5)
+    return s
+
+
+def architecture_ready(cfg: dict) -> dict:
+    s = architecture_settings(cfg)
+    if s.get("enabled") is False:
+        raise LookupError("architecture is disabled (collect.architecture.enabled is false)")
+    return s
+
+
+def architecture_check(cfg: dict) -> dict:
+    architecture_ready(cfg)
+    return {"ok": True, "detail": f"runs as a read-only finder in {repo_root()}"}
+
+
+def architecture_fetch(cfg: dict, days: int, since_iso: str) -> Tuple[List[dict], Dict[str, Any], Dict[str, str]]:
+    s = architecture_ready(cfg)
+    root = repo_root()
+    adr_dir = os.path.join(root, "docs", "adr")
+    adrs = sorted(f for f in os.listdir(adr_dir) if f.endswith(".md")) if os.path.isdir(adr_dir) else []
+    churn: Dict[str, int] = {}
+    try:
+        log = subprocess.run(["git", "-C", root, "log", f"--since={since_iso}", "--name-only", "--format="],
+                             capture_output=True, text=True, check=True).stdout
+        for line in log.splitlines():
+            if line.strip():
+                churn[line.strip()] = churn.get(line.strip(), 0) + 1
+    except (OSError, subprocess.CalledProcessError):
+        pass  # not a git checkout: the finder still works, without the recency hint
+    hot = sorted(churn.items(), key=lambda kv: (-kv[1], kv[0]))[:20]
+    raw = {"runner": "agent", "max_findings": int(s["max_findings"]),
+           "context_md": os.path.isfile(os.path.join(root, "CONTEXT.md")),
+           "adrs": [os.path.join("docs", "adr", f) for f in adrs],
+           "recently_changed": [{"path": p, "commits": n} for p, n in hot]}
+    return [], raw, {}
+
+
 # --- GitHub: dedupe and filing ----------------------------------------------
 
 def gh(*args: str, input_text: Optional[str] = None) -> str:
@@ -421,7 +702,12 @@ def filed_cards(repo: str) -> List[dict]:
         m = FP_RE.search(issue.get("body") or "")
         if m:
             issue["fingerprint"] = m.group(1).lower()
-            cards.append(issue)
+        elif issue.get("number"):
+            # An adopted issue keeps its own body; its fingerprint is its number.
+            issue["fingerprint"] = f"github:{issue['number']}"
+        else:
+            continue
+        cards.append(issue)
     return cards
 
 
@@ -439,7 +725,32 @@ def to_dt(value: Any) -> Optional[dt.datetime]:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.timezone.utc)
 
 
-def classify(candidates: List[dict], cards: List[dict]) -> List[dict]:
+SLUG_PREFIX = {"prs": "prs:", "architecture": "arch:"}
+SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+FILE_LINE = re.compile(r"^[^\s:]+:\d+")
+
+
+def problems(cand: dict, min_prs: int = 2) -> List[str]:
+    """Rules the skill-built candidates must meet before they are verified or filed."""
+    src, ev = cand.get("source"), cand.get("evidence") or {}
+    found = []
+    prefix, fp = SLUG_PREFIX.get(src), str(cand.get("fingerprint", ""))
+    if prefix and not (fp.startswith(prefix) and SLUG_RE.match(fp[len(prefix):])):
+        found.append(f"fingerprint must look like {prefix}<kebab-slug>")
+    if src == "prs":
+        if cand.get("kind") not in ("process", "bug"):
+            found.append("prs kind must be process or bug")
+        if len({p.get("number") for p in ev.get("prs") or []}) < min_prs:
+            found.append(f"a prs pattern must recur across {min_prs}+ PRs")
+    if src == "architecture":
+        if cand.get("kind") != "refactor":
+            found.append("architecture kind must be refactor")
+        if not any(FILE_LINE.match(str(f)) for f in ev.get("files") or []):
+            found.append("architecture evidence needs at least one file:line")
+    return found
+
+
+def classify(candidates: List[dict], cards: List[dict], min_prs: int = 2) -> List[dict]:
     """new | duplicate (an open card exists) | regressed (closed card, seen again since) | resolved."""
     by_fp: Dict[str, dict] = {}
     for c in cards:
@@ -450,7 +761,10 @@ def classify(candidates: List[dict], cards: List[dict]) -> List[dict]:
     for cand in candidates:
         match = by_fp.get(cand["fingerprint"].lower())
         item = dict(cand)
-        if not match:
+        bad = problems(cand, min_prs)
+        if bad:
+            item.update(status="invalid", reasons=bad)
+        elif not match:
             item["status"] = "new"
         elif match["state"] == "OPEN":
             item.update(status="duplicate", existing=match["number"])
@@ -480,21 +794,44 @@ DEFAULT_CRITERIA = {
                  "A test or recorded manual check confirms the event fires once per visit"],
     "perf": ["LCP p75 for this page is under budget in a production-like build",
              "The cause of the slowness is identified in the PR description"],
+    "process": ["The rule or check that would have caught this is written down where the lanes read it "
+                "(CLAUDE.md, a lint rule, a test helper or a skill)",
+                "A test or check fails on the pattern quoted in the evidence and passes after the change",
+                "The next merged PRs show no review or QA comment of this shape"],
+    "refactor": ["Behaviour is unchanged: no public interface, output or test expectation changes",
+                 "The existing test suite still passes, unchanged",
+                 "The simplification is measurable: the PR states the before/after count "
+                 "(lines, files, modules or call sites) for the code named in the evidence"],
+    "feature": ["The behaviour described above works end to end",
+                "A test covers it"],
+    "task": ["The outcome described above is done and visible",
+             "A test or recorded check shows it"],
 }
+
+
+SOURCE_NAMES = {"sentry": "Sentry", "posthog": "PostHog", "github": "GitHub issues",
+                "prs": "merged PR reviews", "architecture": "an architecture review"}
 
 
 def render(card: dict) -> str:
     """Issue body for a verified candidate. `card` = candidate + verifier fields."""
-    src = card["source"].capitalize()
+    src = SOURCE_NAMES.get(card["source"], card["source"].capitalize())
     lines = [f"**Found by factory collect** from {src}"
              + (f" ([source]({card['url']}))" if card.get("url") else "") + "."]
     if card.get("verdict") == "unclear":
         lines.append("\n> ⚠️ The verifier could not confirm this. It needs a human look before Ready.")
     lines += ["", "## What is happening", "", card.get("what") or card.get("summary") or card["title"], ""]
-    lines += ["## Evidence", "",
-              f"- **{fmt_n(card.get('count'))}** events from **{fmt_n(card.get('users'))}** users",
-              f"- First seen {card.get('first_seen') or '?'}, last seen {card.get('last_seen') or '?'}"]
+    lines += ["## Evidence", ""]
+    if card.get("count") is not None or card.get("users") is not None:
+        lines.append(f"- **{fmt_n(card.get('count'))}** events from **{fmt_n(card.get('users'))}** users")
+    if card.get("first_seen") or card.get("last_seen"):
+        lines.append(f"- First seen {card.get('first_seen') or '?'}, last seen {card.get('last_seen') or '?'}")
     ev = card.get("evidence") or {}
+    for pr in ev.get("prs") or []:
+        quote = f": “{scrub(pr.get('quote'), 200)}”" if pr.get("quote") else ""
+        lines.append(f"- PR #{pr.get('number')}" + (f" ({pr['role']})" if pr.get("role") else "") + quote)
+    for loc in ev.get("files") or []:
+        lines.append(f"- `{loc}`")
     if ev.get("short_id"):
         lines.append(f"- Sentry {ev['short_id']}" + (f" in `{ev['culprit']}`" if ev.get("culprit") else ""))
     for frame in ev.get("frames") or []:
@@ -520,6 +857,22 @@ def render(card: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def adoption_note(card: dict) -> str:
+    """Comment left on an adopted issue: the issue body stays the user's own."""
+    lines = ["📥 **Adopted by factory collect** into Backlog."]
+    if card.get("verdict") == "unclear":
+        lines.append("\n> ⚠️ The verifier could not confirm this. It needs a human look before Ready.")
+    if card.get("what"):
+        lines += ["", card["what"]]
+    if card.get("cause"):
+        lines += ["", f"**Likely cause:** {card['cause']}"]
+    if card.get("acceptance"):
+        lines += ["", "**Suggested acceptance criteria** (copy into the issue if they fit):", ""]
+        lines += [f"- [ ] {c}" for c in card["acceptance"]]
+    lines += ["", f"<sub>factory-fingerprint: `{card['fingerprint']}`</sub>"]
+    return "\n".join(lines) + "\n"
+
+
 def labels_for(card: dict) -> List[str]:
     labels = [COLLECTED_LABEL, f"source:{card['source']}", f"kind:{card.get('kind', 'bug')}"]
     if card.get("verdict") == "unclear":
@@ -534,7 +887,13 @@ def file_card(cfg: dict, card: dict) -> dict:
         subprocess.run(["gh", "label", "create", label, "--repo", repo, "--color",
                         colors.get(label, "c5def5"), "--description", "Managed by factory collect"],
                        capture_output=True)
-    if card.get("status") == "regressed" and card.get("existing"):
+    if card.get("adopt"):
+        n = str(card["number"])
+        gh("issue", "edit", n, "--repo", repo, *[a for lb in labels_for(card) for a in ("--add-label", lb)])
+        gh("issue", "comment", n, "--repo", repo, "--body-file", "-", input_text=adoption_note(card))
+        url = card.get("url") or json.loads(gh("issue", "view", n, "--repo", repo, "--json", "url"))["url"]
+        number = int(n)
+    elif card.get("status") == "regressed" and card.get("existing"):
         n = str(card["existing"])
         gh("issue", "reopen", n, "--repo", repo)
         gh("issue", "comment", n, "--repo", repo, "--body-file", "-",
@@ -551,12 +910,31 @@ def file_card(cfg: dict, card: dict) -> dict:
     board = os.path.join(os.path.dirname(os.path.abspath(__file__)), "board.sh")
     subprocess.run(["bash", board, "move", str(number), "backlog"], check=False,
                    stdout=subprocess.DEVNULL)
-    return {"number": number, "url": url, "status": card.get("status", "new")}
+    status = "adopted" if card.get("adopt") else card.get("status", "new")
+    return {"number": number, "url": url, "status": status}
 
 
 # --- CLI --------------------------------------------------------------------
 
-SOURCES = {"sentry": (sentry_check, sentry_fetch), "posthog": (posthog_check, posthog_fetch)}
+SOURCES = {"sentry": (sentry_check, sentry_fetch), "posthog": (posthog_check, posthog_fetch),
+           "github": (github_check, github_fetch), "prs": (prs_check, prs_fetch),
+           "architecture": (architecture_check, architecture_fetch)}
+OPT_IN = ("github", "prs", "architecture")  # run by default only with enabled: true
+
+
+def default_sources(cfg: dict) -> List[str]:
+    """Sources a bare /factory:collect runs."""
+    picked = []
+    for name in SOURCES:
+        block = source_block(cfg, name)
+        if block.get("enabled") is False:
+            continue
+        if name in OPT_IN:
+            if block.get("enabled") is True:
+                picked.append(name)
+        elif block:
+            picked.append(name)
+    return picked
 
 
 def emit(obj: dict) -> None:
@@ -574,7 +952,7 @@ def run_source(cmd: str, source: str, since: str) -> int:
         since = since or (cfg.get("collect") or {}).get("since") or "14d"
         days, since_iso = parse_since(since)
         result = fetch(cfg, days, since_iso)
-        if source == "posthog":
+        if isinstance(result, tuple):
             cands, raw, errors = result
         else:
             cands, raw, errors = result, {}, {}
@@ -592,6 +970,7 @@ def run_source(cmd: str, source: str, since: str) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="collect.py", description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("sources")
     for name in ("check", "fetch"):
         sp = sub.add_parser(name)
         sp.add_argument("source", choices=sorted(SOURCES))
@@ -602,20 +981,39 @@ def main(argv: Optional[List[str]] = None) -> int:
         sp.add_argument("path", help="JSON file, or - for stdin")
     args = p.parse_args(argv)
 
+    if args.cmd == "sources":
+        cfg = load_config()
+        emit({"default": default_sources(cfg), "all": list(SOURCES),
+              "agent_run": ["architecture"], "adopts": ["github"], "raw_only": ["prs", "architecture"]})
+        return EXIT_OK
     if args.cmd in ("check", "fetch"):
         return run_source(args.cmd, args.source, getattr(args, "since", ""))
 
-    data = json.load(sys.stdin if args.path == "-" else open(args.path))
+    if args.path == "-":
+        data = json.load(sys.stdin)
+    else:
+        with open(args.path) as fh:
+            data = json.load(fh)
     if args.cmd == "render":
         sys.stdout.write(render(data))
         return EXIT_OK
     cfg = load_config()
     if args.cmd == "dedupe":
         cands = data.get("candidates", data) if isinstance(data, dict) else data
-        emit({"candidates": classify(cands, filed_cards(cfg["repo"]))})
+        arch = [c for c in cands if c.get("source") == "architecture"]
+        limit = int(architecture_settings(cfg)["max_findings"])
+        out = classify(cands, filed_cards(cfg["repo"]), int(prs_settings(cfg)["min_prs"]))
+        for item in [o for o in out if o.get("source") == "architecture"][limit:]:
+            item.update(status="invalid", reasons=[f"over collect.architecture.max_findings ({limit})"])
+        emit({"candidates": out, "architecture_proposed": len(arch)})
         return EXIT_OK
     if args.cmd == "file":
         cards = data if isinstance(data, list) else [data]
+        min_prs = int(prs_settings(cfg)["min_prs"])
+        bad = {c.get("fingerprint"): problems(c, min_prs) for c in cards if problems(c, min_prs)}
+        if bad:
+            emit({"error": "refusing to file invalid candidates", "invalid": bad})
+            return EXIT_USAGE
         emit({"filed": [file_card(cfg, c) for c in cards]})
         return EXIT_OK
     return EXIT_USAGE

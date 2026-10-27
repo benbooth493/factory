@@ -1,0 +1,21 @@
+{
+  "options": [
+    {"id": "o_todo", "name": "Todo", "color": "GRAY", "description": ""},
+    {"id": "o_ready", "name": "Ready", "color": "BLUE", "description": "Groomed"},
+    {"id": "o_building", "name": "Building", "color": "YELLOW", "description": ""},
+    {"id": "o_inprog", "name": "In progress", "color": "YELLOW", "description": ""},
+    {"id": "o_inrev", "name": "In review", "color": "PURPLE", "description": ""},
+    {"id": "o_done", "name": "Done", "color": "GREEN", "description": ""},
+    {"id": "o_parked", "name": "Parked", "color": "PINK", "description": ""}
+  ],
+  "items": [
+    {"id": "I1", "status": "Todo", "content": {"type": "Issue", "number": 1, "title": "a"}},
+    {"id": "I2", "status": "Building", "content": {"type": "Issue", "number": 2, "title": "b"}},
+    {"id": "I3", "status": "In progress", "content": {"type": "Issue", "number": 3, "title": "c"}},
+    {"id": "I4", "status": "In review", "content": {"type": "PullRequest", "number": 4, "title": "d"}},
+    {"id": "I5", "status": "Done", "content": {"type": "Issue", "number": 5, "title": "e"}},
+    {"id": "I6", "status": "Ready", "content": {"type": "Issue", "number": 6, "title": "f"}},
+    {"id": "I7", "status": "Parked", "content": {"type": "DraftIssue", "title": "draft g"}},
+    {"id": "I8", "content": {"type": "Issue", "number": 8, "title": "no status"}}
+  ]
+}

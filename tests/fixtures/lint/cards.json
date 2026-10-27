@@ -1,0 +1,20 @@
+[
+  {"number": 1, "title": "Add CSV export to reports", "labels": [{"name": "kind:feature"}],
+   "body": "## Problem\nPeople copy tables by hand.\n\n## Acceptance criteria\n- [ ] The Reports page shows an \"Export CSV\" button\n- [ ] Clicking it downloads `report-<date>.csv` with one row per table row\n- [ ] An empty report downloads a file with only the header row\n\n## Notes\nnone"},
+  {"number": 2, "title": "Make search better", "labels": [],
+   "body": "Search is slow and annoying. It should work properly."},
+  {"number": 3, "title": "Speed up dashboard", "labels": [],
+   "body": "## Acceptance criteria\n- [ ] Dashboard is faster\n- [ ] Charts look nicer, tooltips, legends etc\n- [ ] p75 load time is under 1500 ms faster than today"},
+  {"number": 4, "title": "Fix crash on checkout", "labels": [{"name": "bug"}],
+   "body": "## Acceptance criteria\n- [ ] Submitting the cart with an expired card shows the message \"Card expired\"\n- [ ] No 500 is returned"},
+  {"number": 5, "title": "Fix crash on checkout", "labels": ["kind:bug"],
+   "body": "## Steps to reproduce\n1. Add an item\n2. Pay with 4000 0000 0000 0069\n\n## Acceptance criteria\n- [ ] Submitting the cart with an expired card shows the message \"Card expired\"\n- [ ] A regression test covers the expired-card path and passes"},
+  {"number": 6, "title": "Add dark mode and fix login redirect and update billing emails", "labels": [],
+   "body": "- [ ] Toggle in settings switches the theme to dark\n- [ ] Login redirects to /home\n- [ ] Billing email subject contains the invoice number"},
+  {"number": 7, "title": "Tidy settings", "labels": [],
+   "body": "## Acceptance criteria\n\n## Context\nsomething"},
+  {"number": 8, "title": "Refactor the auth module", "labels": [],
+   "body": "## Acceptance criteria\n- [ ] The code is maintainable\n- [ ] `npm test` exits 0"},
+  {"number": 9, "title": "Example in a code fence is not criteria", "labels": [],
+   "body": "Template:\n```\n- [ ] something\n```\n"}
+]

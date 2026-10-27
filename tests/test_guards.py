@@ -90,6 +90,14 @@ class BashGuardTest(unittest.TestCase):
             json.dump({"base_branch": "develop"}, fh)
         self.assertBlocked("git push origin develop")
 
+    def test_config_protected_branches(self):
+        os.makedirs(os.path.join(self.root, ".claude"), exist_ok=True)
+        with open(os.path.join(self.root, ".claude", "factory.json"), "w") as fh:
+            json.dump({"protected_branches": ["release", "staging"]}, fh)
+        self.assertBlocked("git push origin release")
+        self.assertBlocked("git push origin HEAD:staging")
+        self.assertAllowed("git push origin factory/12")
+
     # secrets
     def test_secret_reads_blocked(self):
         for cmd in ("cat .env", "less config/.env.production", "source .env.local",

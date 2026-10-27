@@ -13,7 +13,9 @@
     "done": "Done",
     "blocked": "Blocked"
   },
-  "verify_commands": ["make test"],
+  "verify_commands": [
+    "make test"
+  ],
   "max_parallel": 3,
   "max_bounces": 2,
   "merge_method": "squash",
@@ -38,11 +40,6 @@
       "noise": 0.9,
       "criteria": 0.5,
       "sensitive": 0.5
-    },
-    "routing": {
-      "easy": "sonnet",
-      "medium": "sonnet",
-      "hard": "opus"
     }
   },
   "collect": {
@@ -65,8 +62,19 @@
       "min_users": 2,
       "limit": 25,
       "slow_lcp_ms": 2500,
-      "failure_events": ["checkout_failed", "signup_error"],
-      "signals": ["exceptions", "rageclicks", "deadclicks", "slow_pages", "failures", "surveys", "pageview_paths"]
+      "failure_events": [
+        "checkout_failed",
+        "signup_error"
+      ],
+      "signals": [
+        "exceptions",
+        "rageclicks",
+        "deadclicks",
+        "slow_pages",
+        "failures",
+        "surveys",
+        "pageview_paths"
+      ]
     }
   }
 }

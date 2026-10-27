@@ -101,11 +101,12 @@ class InterpretTest(Base):
         out = jev.decide(cfg(collect_triage="live"), "collect_triage", {"title": "x"}, "sentry:2")
         self.assertEqual(out["label"], "keep", "70% noise is not enough to skip a verifier")
 
-    def test_card_lint_routing(self):
+    def test_card_lint_grade(self):
         self.use({"criteria": {"type": "noul", "noul": 0.88},
                   "difficulty": {"type": "score", "score": 1.8}})
         out = jev.decide(cfg(), "card_lint", "## Acceptance criteria\n- [ ] x", "12")
-        self.assertEqual((out["label"], out["difficulty"], out["model"]), ("pass", "hard", "opus"))
+        self.assertEqual((out["label"], out["difficulty"]), ("pass", "hard"))
+        self.assertNotIn("model", out, "route.py owns grade -> model")
 
     def test_tiers(self):
         self.assertEqual(jev.tier(0.2, 2), "easy")

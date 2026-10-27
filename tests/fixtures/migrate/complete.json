@@ -1,0 +1,14 @@
+{
+  "options": [
+    {"id": "o_backlog", "name": "Backlog", "color": "GRAY", "description": ""},
+    {"id": "o_ready", "name": "Ready", "color": "BLUE", "description": ""},
+    {"id": "o_build", "name": "Build", "color": "YELLOW", "description": ""},
+    {"id": "o_qa", "name": "QA", "color": "ORANGE", "description": ""},
+    {"id": "o_review", "name": "Review", "color": "PURPLE", "description": ""},
+    {"id": "o_blocked", "name": "Blocked", "color": "RED", "description": ""},
+    {"id": "o_done", "name": "Done", "color": "GREEN", "description": ""}
+  ],
+  "items": [
+    {"id": "I1", "status": "Ready", "content": {"type": "Issue", "number": 1, "title": "a"}}
+  ]
+}

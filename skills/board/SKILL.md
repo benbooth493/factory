@@ -1,10 +1,10 @@
 ---
 name: board
 description: Factory orchestrator. Drains a GitHub Project board — cards in Ready go through Build, QA and Review lanes run by subagents and come out as merged PRs. Use for /factory:board onboard, doctor, status, run or stop, or when the user asks to work the board.
-argument-hint: "onboard | doctor | status | run [--once] | stop"
+argument-hint: "onboard | doctor | status | lint | migrate [--dry-run] | run [--once] [--low|--high] [--codex[=<model>]] | stop"
 ---
 
-# Factory — the orchestrator
+# Factory board — the orchestrator
 
 You are the dispatcher. You never write product code yourself. You read the
 board, hand cards to lane subagents, and keep the board honest. The board is
@@ -17,6 +17,10 @@ Paths (already resolved for this install):
 - Worktrees: `${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh`
 - Merge gate: `${CLAUDE_PLUGIN_ROOT}/scripts/merge-gate.sh`
 - Jev decisions (optional): `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jev.py`
+- Model router: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/route.py` (how to use it: `${CLAUDE_PLUGIN_ROOT}/skills/board/references/router.md`)
+- Codex lanes: `${CLAUDE_PLUGIN_ROOT}/scripts/codex-lane.sh` (hosts: `${CLAUDE_PLUGIN_ROOT}/docs/hosts.md`)
+- Required skills check: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skills-ready.py`
+- Writing standard: `${CLAUDE_PLUGIN_ROOT}/docs/writing-standard.md`
 - Lane instructions: `${CLAUDE_PLUGIN_ROOT}/skills/{build,qa,review}/SKILL.md`
 - Project config: `.claude/factory.json` in the repo root (example in
   `${CLAUDE_PLUGIN_ROOT}/examples/factory.json`)
@@ -105,8 +109,12 @@ comment `⏸ factory stopped mid-flight in <lane>; resume with /factory:board ru
 and `board.sh release <n>`. Leave cards in their current column; the next
 run picks them up from there. Do not delete branches or worktrees.
 
-### `run [--once]`
+### `run [--once] [--low|--high] [--codex[=<model>]]`
 
+0. **Run flags.** `route.py args <your run arguments>` gives `host`, `tier`
+   and `pin`. Keep them for the whole run and repeat them in any resume
+   hint. Inside a Codex session the host is `codex` with no flag
+   (`docs/hosts.md`).
 1. **Preflight.** `board.sh doctor` must print `ready`; otherwise stop and
    show it. Run `worktree.sh prune`.
 2. **Recover.** Any card with `factory:wip` at start-up is a leftover from
@@ -128,10 +136,14 @@ run picks them up from there. Do not delete branches or worktrees.
    - Always record your own lint result: `jev.py record card_lint <n> pass|fail`.
    - In **live** mode (`act: true`), Jev's `label` decides pass/fail (you may
      still fail a card Jev passed if it plainly has no criteria — never the
-     reverse), and its `model` picks the Build lane model for this card,
-     overriding `models.build`.
-   - In shadow mode or when `available` is false, your judgement and
-     `models.build` stand.
+     reverse), and its `difficulty` grades the card (below).
+   - In shadow mode or when `available` is false, your judgement stands.
+
+   **Grade the card** (easy/medium/hard) as `references/router.md` says: the
+   card's own `Difficulty:` line or `difficulty:*` label, else Jev's live
+   card_lint answer (`route.py card <card.json> --jev <lint.json>`), else one
+   router subagent on the model `route.py router --tier <tier> --host <host> [--pin <pin>]`
+   prints, using the prompt in router.md. Skip grading when that prints `none`.
 5. **Dispatch.** For each card, `board.sh claim <n>` (skip the card if the
    claim fails), then launch one subagent per card, all in a single message
    so they run in parallel. Prompt each one with:
@@ -141,7 +153,15 @@ run picks them up from there. Do not delete branches or worktrees.
    > exactly. Config is `.claude/factory.json`. Finish by printing the
    > single final line the skill asks for.
 
-   Use the model from `models.<lane>` in the config when set.
+   Get the model with `route.py model --lane <lane> --grade <grade> --tier <tier> --host <host> [--pin <pin>]`;
+   `inherit` means launch the subagent without a model. Cards entering past
+   Ready use the `Grade:` from their Build hand-off comment, else `medium`.
+
+   With host `codex`, do not launch subagents: run
+   `bash ${CLAUDE_PLUGIN_ROOT}/scripts/codex-lane.sh <lane> <n> --model <model>`
+   for each card, in parallel as background commands, and read its stdout as
+   the RESULT line. Exit 3 (no RESULT) or 124 (timeout) is a lane that died:
+   handle it as in step 6.
 6. **Reconcile.** When the wave finishes, read each lane's final line
    (`RESULT: <lane> #<n> <outcome> ...`). Make sure the card actually moved
    and `factory:wip` was released; if a lane died without doing so, release
@@ -151,10 +171,12 @@ run picks them up from there. Do not delete branches or worktrees.
 7. **Repeat** from step 3 until there is no work in Ready, Build, QA or
    Review. With `--once`, stop after one wave.
 8. **Report** in a few lines: merged PRs (links), cards in Blocked and why,
-   anything still in flight.
+   PRs held for a human (`factory:needs-human`), anything still in flight.
+   Offer `/factory:visual recap` for a merged branch if the user wants a
+   picture of it.
 
 Keep the user's view quiet while running: one line per wave
-(`wave 3: review #12, qa #15, build #18`) and the final report. Detailed
+(`wave 3: review #12, qa #15, build #18 (hard → session)`) and the final report. Detailed
 evidence belongs in issue and PR comments, not the chat.
 
 ## Rules
