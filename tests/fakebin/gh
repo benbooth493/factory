@@ -17,7 +17,8 @@ case "$1 ${2:-}" in
     jq -n --arg h "${FAKE_HEAD:?}" --arg m "${FAKE_MERGEABLE:-MERGEABLE}" --arg c "${FAKE_CHECK:-SUCCESS}" \
       '{headRefOid:$h, headRefName:"factory/3", baseRefName:"main", mergeable:$m, isDraft:true,
         state:"OPEN", statusCheckRollup:[{conclusion:$c}]}' ;;
-  "pr ready"|"pr merge") : ;;
+  "pr ready"|"pr merge"|"pr edit") : ;;
+  "pr diff") printf 'diff --git a/db/migrate.sql b/db/migrate.sql\n+ALTER TABLE users DROP COLUMN email;\n' ;;
   "auth status") echo "  - Token scopes: 'project', 'repo'" ;;
   "repo view") echo '{}' ;;
   *) echo "fake gh: unhandled: $*" >&2; exit 1 ;;

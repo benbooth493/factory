@@ -7,14 +7,18 @@
 #   1. the PR's head is still exactly the commit the reviewer approved
 #   2. the PR is mergeable and every reported check has passed
 #   3. the head, merged with the current base, passes every verify_command
+#   4. (optional) Jev's risk_veto, when live, does not flag the change as
+#      sensitive. Jev can only hold a merge for a human, never approve one.
 # The merge itself is pinned with --match-head-commit, so a push that lands
 # between the checks and the merge makes GitHub refuse it.
 #
 # Exit codes: 0 merged (or left for a human when auto_merge is false),
-#             1 a gate failed, 2 bad usage or config.
+#             1 a gate failed, 2 bad usage or config,
+#             4 held for a human by the risk veto (label factory:needs-human).
 
 set -euo pipefail
 
+here="$(cd "$(dirname "$0")" && pwd)"
 die() { echo "merge-gate: $*" >&2; exit "${2:-1}"; }
 
 [ $# -eq 2 ] || die "usage: merge-gate.sh <pr-number> <reviewed-sha>" 2
@@ -65,6 +69,24 @@ while [ "$i" -lt "$ncmds" ]; do
   (cd "$wt" && bash -c "$cmd") || die "verify command failed: $cmd"
   i=$((i + 1))
 done
+
+# 4. Risk veto. Shadow mode only logs; any Jev failure lets the merge proceed
+#    exactly as it would without Jev.
+if [ "$(jq -r '.jev.enabled // false' "$config")" = "true" ]; then
+  set +e
+  verdict=$(python3 "$here/jev.py" gate "$pr")
+  rc=$?
+  set -e
+  echo "merge-gate: risk veto: $verdict"
+  if [ "$rc" -eq 4 ]; then
+    gh label create factory:needs-human --repo "$repo" --color b60205 \
+      --description "Factory held this for a human decision" >/dev/null 2>&1 || true
+    gh pr edit "$pr" --repo "$repo" --add-label factory:needs-human >/dev/null 2>&1 || true
+    gh pr ready "$pr" --repo "$repo" >/dev/null 2>&1 || true
+    echo "merge-gate: all gates green for #$pr at $head, but the change looks sensitive; held for a human"
+    exit 4
+  fi
+fi
 
 if [ "$auto" = "false" ]; then
   gh pr ready "$pr" --repo "$repo" >/dev/null 2>&1 || true

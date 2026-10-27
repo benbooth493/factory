@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tests for scripts/merge-gate.sh: real git repos, fake gh. Run: bash tests/test_merge_gate.sh
+# shellcheck disable=SC2015  # test bookkeeping uses a && b || c deliberately
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -51,6 +52,35 @@ run "refuses with conflicts" 1 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
 
 write_config "false"
 run "refuses when verify fails" 1 FAKE_HEAD="$head"
+
+# Jev risk veto (canned gateway responses, no network)
+fx="$here/fixtures/jev"
+jev_config() { # jev_config <mode>
+  write_config "test -f b.txt"
+  jq --arg m "$1" '.jev = {enabled: true, points: {risk_veto: $m}}' .claude/factory.json > c && mv c .claude/factory.json
+}
+export FACTORY_JEV_LOG="$tmp/jev.jsonl" AI_GATEWAY_API_KEY=vck_test
+
+jev_config live
+run "live veto holds a sensitive change" 4 FAKE_HEAD="$head" FACTORY_JEV_FAKE_RESPONSE="$fx/risk_sensitive.json"
+if grep -q "pr merge" "$GH_LOG"; then fail=$((fail + 1)); echo "FAIL merged despite veto"
+else pass=$((pass + 1)); echo "ok   no merge when held"; fi
+if grep -q -- "--add-label factory:needs-human" "$GH_LOG"; then pass=$((pass + 1)); echo "ok   held PR labelled needs-human"
+else fail=$((fail + 1)); echo "FAIL needs-human label missing"; fi
+
+run "live veto lets a safe change merge" 0 FAKE_HEAD="$head" FACTORY_JEV_FAKE_RESPONSE="$fx/risk_safe.json"
+grep -q "pr merge" "$GH_LOG" && { pass=$((pass + 1)); echo "ok   safe change merged"; } || { fail=$((fail + 1)); echo "FAIL safe change not merged"; }
+
+jev_config shadow
+run "shadow veto never blocks" 0 FAKE_HEAD="$head" FACTORY_JEV_FAKE_RESPONSE="$fx/risk_sensitive.json"
+grep -q "pr merge" "$GH_LOG" && { pass=$((pass + 1)); echo "ok   shadow merged and logged"; } || { fail=$((fail + 1)); echo "FAIL shadow blocked"; }
+
+jev_config live
+run "jev unavailable fails open" 0 FAKE_HEAD="$head" AI_GATEWAY_API_KEY= FACTORY_JEV_FAKE_RESPONSE=
+
+[ "$(grep -c '"kind": "jev"' "$tmp/jev.jsonl")" -eq 3 ] && { pass=$((pass + 1)); echo "ok   three decisions logged"; } \
+  || { fail=$((fail + 1)); echo "FAIL jev log"; cat "$tmp/jev.jsonl"; }
+unset FACTORY_JEV_LOG AI_GATEWAY_API_KEY
 
 write_config "test -f b.txt" false
 run "auto_merge off leaves it for a human" 0 FAKE_HEAD="$head"

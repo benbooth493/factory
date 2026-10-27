@@ -18,7 +18,10 @@ Scripts: `B=${CLAUDE_PLUGIN_ROOT}/scripts/board.sh`,
 2. **Read everything first.** `gh issue view <n> --comments`. If a PR already
    exists for this issue (a bounce), read its review and QA comments too:
    `gh pr list --search "<n> in:body" --state open`. Bounce feedback is your
-   to-do list; address every point.
+   to-do list; address every point. A `bounce:<reason>` label on the issue
+   says what kind of failure it was: start there (for `missing_test`, write
+   the test before touching the code; for `criteria_misread`, re-read the
+   criteria and say in the PR how you now read each one).
 3. **Get a worktree.** `FACTORY_TITLE="<issue title>" $W open <n>` prints the
    path. Do all work there. Read the repo's `CLAUDE.md` / `AGENTS.md` /
    `CONTRIBUTING.md` if present and follow them.

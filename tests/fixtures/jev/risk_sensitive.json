@@ -1,0 +1,6 @@
+{
+  "model": "typesafe-ai/jev",
+  "answers": {"sensitive": {"type": "noul", "noul": 0.93}},
+  "usage": {"input_tokens": 410, "output_tokens": 20},
+  "provider_metadata": {"gateway": {"cost": "0.0000172", "generationId": "gen_test"}}
+}

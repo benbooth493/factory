@@ -23,6 +23,28 @@
     "qa": "sonnet",
     "review": "opus"
   },
+  "jev": {
+    "enabled": true,
+    "base_url": "https://ai-gateway.vercel.sh/typesafe",
+    "model": "typesafe-ai/jev",
+    "monthly_budget_usd": 5,
+    "points": {
+      "collect_triage": "shadow",
+      "card_lint": "shadow",
+      "risk_veto": "shadow",
+      "bounce_reason": "shadow"
+    },
+    "thresholds": {
+      "noise": 0.9,
+      "criteria": 0.5,
+      "sensitive": 0.5
+    },
+    "routing": {
+      "easy": "sonnet",
+      "medium": "sonnet",
+      "hard": "opus"
+    }
+  },
   "collect": {
     "since": "14d",
     "sentry": {

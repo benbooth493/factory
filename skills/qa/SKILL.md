@@ -48,9 +48,24 @@ Gaps: <none | list>
 ## Hand off
 
 - Pass: `$B move <n> review`, `$B release <n>`.
-- Fail: `$B bounces <n>`. If it is below `max_bounces` (config, default 2),
-  `$B bounce <n>` and `$B move <n> build`; otherwise `$B move <n> blocked` with
+- Fail: classify it (*Bounce reason* below). `$B bounces <n>`. If it is below
+  `max_bounces` (config, default 2), `$B bounce <n>` and `$B move <n> build`; otherwise `$B move <n> blocked` with
   a comment summarising why it keeps failing. Then `$B release <n>`.
+
+## Bounce reason
+
+Every bounce back to Build gets one reason, chosen by you: `missing_test`,
+`logic_bug`, `criteria_misread`, `scope_creep` or `environment`. Put it on
+the first line of your report comment (`Reason: logic_bug`).
+
+When `jev.enabled` in config, also save that report comment **without the
+`Reason:` line** to a file (Jev must judge the findings, not read your
+answer), and run
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jev.py decide bounce_reason <file> --id <n>-b<k>`
+(k = the new bounce number), then
+`jev.py record bounce_reason <n>-b<k> <your reason>`. If the result has
+`act: true`, add the label `bounce:<jev label>` to the issue; otherwise
+add `bounce:<your reason>`. The Build lane reads that label first.
 
 ## Final line
 
