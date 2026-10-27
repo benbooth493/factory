@@ -9,6 +9,7 @@
 #   status                      card counts per column
 #   items [column]              JSON array of issue cards (optionally one column)
 #   next <column> [n]           up to n unclaimed cards in a column, oldest first
+#                               (skips cards held for a human: factory:needs-human)
 #   move <issue> <column-key>   move a card (column-key: ready|build|qa|review|done|blocked|backlog)
 #   claim <issue>               take the factory:wip label; exits 1 if already held
 #   release <issue>             drop the factory:wip label
@@ -22,6 +23,7 @@
 set -euo pipefail
 
 WIP_LABEL="factory:wip"
+HOLD_LABEL="factory:needs-human"
 BOUNCE_PREFIX="factory:bounce-"
 
 die() { echo "board: $*" >&2; exit 1; }
@@ -117,8 +119,10 @@ cmd_next() {
   local col n
   col=$(column_name "$1")
   n="${2:-1}"
-  items_json | jq --arg c "$col" --arg wip "$WIP_LABEL" --argjson n "$n" '
-    [ .[] | select(.status == $c) | select((.labels | index($wip)) | not) ]
+  items_json | jq --arg c "$col" --arg wip "$WIP_LABEL" --arg hold "$HOLD_LABEL" --argjson n "$n" '
+    [ .[] | select(.status == $c)
+      | select((.labels | index($wip)) | not)
+      | select((.labels | index($hold)) | not) ]
     | sort_by(.number) | .[:$n]'
 }
 

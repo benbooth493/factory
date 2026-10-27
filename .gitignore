@@ -3,3 +3,4 @@ __pycache__/
 .claude/worktrees/
 .DS_Store
 .claude/factory/
+_site/

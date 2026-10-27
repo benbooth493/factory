@@ -1,14 +1,26 @@
 {
   "name": "factory",
   "displayName": "Factory",
-  "version": "0.3.0",
-  "description": "Drain a GitHub Project board with Claude Code: cards in Ready go through Build, QA and Review lanes and come out as merged PRs. Collects problems from Sentry and PostHog into Backlog. Optional Jev decisions via Vercel AI Gateway.",
+  "version": "0.4.0",
+  "description": "Drain a GitHub Project board with Claude Code or Codex: cards in Ready go through Build, QA and Review lanes and come out as merged PRs. Collects problems from Sentry, PostHog, GitHub and merged PRs into Backlog; UI refine loop, visual pages, git-sync, optional Jev decisions.",
   "author": {
     "name": "Ben Booth",
     "url": "https://github.com/benbooth493"
   },
-  "homepage": "https://github.com/benbooth493/factory",
+  "homepage": "https://benbooth493.github.io/factory/",
   "repository": "https://github.com/benbooth493/factory",
   "license": "MIT",
-  "keywords": ["github-projects", "kanban", "agents", "automation", "pull-requests", "sentry", "posthog", "jev"]
+  "keywords": [
+    "agents",
+    "automation",
+    "codex",
+    "github-projects",
+    "impeccable",
+    "jev",
+    "kanban",
+    "playwright",
+    "posthog",
+    "pull-requests",
+    "sentry"
+  ]
 }

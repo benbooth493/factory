@@ -136,8 +136,9 @@ if [ -n "$missing" ]; then
     '{query:$q, variables:{id:$id, opts:[$plan.desired[] | {name, color, description: (.description // "")}]}}' \
     | gh api graphql --input - >/dev/null || die "could not update the options of '$field'; cards' columns are in $backup"
   options=$(read_options) || die "cannot re-read the options"
-  for name in $(jq -r '.missing[].name | @base64' <<<"$plan"); do
-    name=$(printf '%s' "$name" | base64 --decode)
+  n=$(jq '.missing | length' <<<"$plan"); i=0
+  while [ "$i" -lt "$n" ]; do
+    name=$(jq -r --argjson i "$i" '.missing[$i].name' <<<"$plan"); i=$((i + 1))
     jq -e --arg n "$name" 'map(.name) | index($n)' <<<"$options" >/dev/null \
       || die "column '$name' is still missing after the update; cards' columns are in $backup"
     echo "  added $name"
@@ -152,8 +153,9 @@ fixes=$(jq -c --argjson plan "$plan" --argjson opts "$options" '
   | [ $plan.items[] | select(.want != null and $cur[.id] != .want)
       | . as $i | . + {option: ($opts | map(select(.name == $i.want)) | first | .id)} ]' <<<"$now")
 moved=0
-for row in $(jq -r '.[] | @base64' <<<"$fixes"); do
-  row=$(printf '%s' "$row" | base64 --decode)
+n=$(jq 'length' <<<"$fixes"); i=0
+while [ "$i" -lt "$n" ]; do
+  row=$(jq -c --argjson i "$i" '.[$i]' <<<"$fixes"); i=$((i + 1))
   id=$(jq -r .id <<<"$row"); want=$(jq -r .want <<<"$row"); opt=$(jq -r '.option // empty' <<<"$row")
   [ -n "$opt" ] || die "no option '$want' for $(jq -r .label <<<"$row")"
   gh project item-edit --id "$id" --project-id "$project_id" --field-id "$field_id" \

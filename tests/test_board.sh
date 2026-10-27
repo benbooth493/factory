@@ -25,7 +25,7 @@ check() {
 }
 
 # items: only issues from the configured repo
-check "items filters to repo issues" "1 2 3 7 9" \
+check "items filters to repo issues" "1 2 3 7 9 12 13" \
   "$("$board" items | jq -r '[.[].number] | sort | map(tostring) | join(" ")')"
 
 check "items by column" "1 2 3" \
@@ -37,10 +37,13 @@ check "next skips claimed, oldest first" "2 3" \
 check "next respects n" "2" \
   "$("$board" next ready 1 | jq -r '.[0].number')"
 
+check "next skips cards held for a human" "13" \
+  "$("$board" next review 5 | jq -r '[.[].number] | map(tostring) | join(" ")')"
+
 check "next on empty column" "0" \
   "$("$board" next build 3 | jq 'length')"
 
-check "status counts" "Ready 3|QA 1|Done 1|in-flight 2" \
+check "status counts" "Ready 3|QA 1|Review 2|Done 1|in-flight 2" \
   "$("$board" status | awk '$2>0{printf "%s%s %s", (n++?"|":""), $1, $2}')"
 
 # column renames from config

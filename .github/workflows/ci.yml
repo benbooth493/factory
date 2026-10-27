@@ -23,15 +23,31 @@ jobs:
         run: |
           command -v jq || { sudo apt-get install -y jq || brew install jq; }
           python -m pip install --quiet shellcheck-py
+          git config --global init.defaultBranch main
+          git config --global user.name ci
+          git config --global user.email ci@localhost
       - name: Shellcheck
-        run: shellcheck scripts/*.sh tests/*.sh tests/fakebin/gh
+        run: >-
+          shellcheck scripts/*.sh tests/*.sh tests/fakebin/gh
+          tests/fakebin_collect/gh tests/fakebin_route/codex
+          skills/ui-refine-loop/refine.sh
       - name: Validate JSON
-        run: for f in .claude-plugin/*.json hooks/hooks.json examples/*.json; do jq empty "$f"; done
-      - name: Guard hooks
+        run: for f in .claude-plugin/*.json hooks/hooks.json examples/*.json skills/families.json; do jq empty "$f"; done
+      - name: Python tests
         run: python -m unittest discover -s tests -v
       - name: board.sh
         run: bash tests/test_board.sh
       - name: merge gate
-        run: |
-          git config --global init.defaultBranch main
-          bash tests/test_merge_gate.sh
+        run: bash tests/test_merge_gate.sh
+      - name: board migrate
+        run: bash tests/test_board_migrate.sh
+      - name: git-sync
+        run: bash tests/test_git_sync.sh
+      - name: codex lane
+        run: bash tests/test_codex_lane.sh
+      - name: ui scripts
+        run: bash tests/test_shoot_refine.sh
+      - name: README skills table is current
+        run: python scripts/readme-sync.py --check
+      - name: Docs site builds
+        run: python scripts/build-site.py --out _site

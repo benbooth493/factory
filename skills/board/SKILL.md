@@ -1,6 +1,6 @@
 ---
 name: board
-description: Factory orchestrator. Drains a GitHub Project board — cards in Ready go through Build, QA and Review lanes run by subagents and come out as merged PRs. Use for /factory:board onboard, doctor, status, run or stop, or when the user asks to work the board.
+description: Factory orchestrator. Drains a GitHub Project board — cards in Ready go through Build, QA and Review lanes run by subagents and come out as merged PRs. Use for /factory:board onboard, doctor, status, lint, migrate, run or stop, or when the user asks to work the board.
 argument-hint: "onboard | doctor | status | lint | migrate [--dry-run] | run [--once] [--low|--high] [--codex[=<model>]] | stop"
 ---
 
@@ -20,6 +20,8 @@ Paths (already resolved for this install):
 - Model router: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/route.py` (how to use it: `${CLAUDE_PLUGIN_ROOT}/skills/board/references/router.md`)
 - Codex lanes: `${CLAUDE_PLUGIN_ROOT}/scripts/codex-lane.sh` (hosts: `${CLAUDE_PLUGIN_ROOT}/docs/hosts.md`)
 - Required skills check: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skills-ready.py`
+- Card lint: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lint-cards.py`
+- Board columns: `${CLAUDE_PLUGIN_ROOT}/scripts/board-migrate.sh`
 - Writing standard: `${CLAUDE_PLUGIN_ROOT}/docs/writing-standard.md`
 - Lane instructions: `${CLAUDE_PLUGIN_ROOT}/skills/{build,qa,review}/SKILL.md`
 - Project config: `.claude/factory.json` in the repo root (example in
@@ -40,6 +42,9 @@ Run every script from the repository root.
 | Done    | Merged.                                                      | —                         |
 
 Labels: `factory:wip` is the claim mutex (one lane per card).
+`factory:needs-human` marks a green PR the merge gate held for a person
+(merge policy, migration or Jev veto); waves skip those cards until a human
+merges and moves them, or removes the label.
 `factory:bounce-N` counts trips back to Build. At `max_bounces` (default 2)
 the next failure goes to Blocked instead.
 
@@ -57,13 +62,18 @@ Goal: a working `.claude/factory.json` and a board with the right columns.
 3. List projects with `gh project list --owner <owner>`. Ask which one (or
    offer to create one with `gh project create`). Link it to the repo with
    `gh project link`.
-4. Make sure the Status single-select field has every column above. Add any
-   missing option through the GitHub UI or `gh api graphql`; never delete or
-   rename options that already hold cards — ask instead.
-5. Ask what proves the code works: the commands for `verify_commands`
+4. **Columns.** Run `${CLAUDE_PLUGIN_ROOT}/scripts/board-migrate.sh --dry-run`,
+   show the plan (missing columns to add, legacy columns such as Building or
+   Todo to map), and on yes run it for real. It never deletes a column.
+5. **Required skills.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skills-ready.py --all`.
+   factory requires Matt Pocock's skills, impeccable and humanizer. On exit
+   10, show the install commands it printed and ask the user to run them
+   (plugin installs need the user); re-check afterwards. Never install
+   anything yourself.
+6. Ask what proves the code works: the commands for `verify_commands`
    (look at package.json, Makefile, pyproject, CI workflows first and
    propose them). The merge gate refuses to merge without at least one.
-6. **Problem sources (optional).** Detect Sentry and PostHog:
+7. **Problem sources (optional).** Detect Sentry and PostHog:
    - Sentry: `@sentry/*` or `sentry-sdk` in dependencies, `sentry.properties`,
      `sentry.*.config.*` files. Org and project slugs usually live in
      `sentry.properties` or the Sentry webpack/vite plugin config.
@@ -79,20 +89,30 @@ Goal: a working `.claude/factory.json` and a board with the right columns.
    `collect` block (shape in `${CLAUDE_PLUGIN_ROOT}/examples/factory.json`),
    then test each with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/collect.py check <source>`
    and show the result. A failed check leaves the source enabled but
-   reported as unavailable; it is not fatal to onboarding.
-7. **Jev decisions (optional).** If `env-names.sh` shows
+   reported as unavailable; it is not fatal to onboarding. Also offer the
+   opt-in sources: `github` (adopt open issues not on the board), `prs`
+   (recurring problems across merged PRs) and `architecture` (refactor
+   finder); write `collect.<source>.enabled: true` for each the user wants.
+8. **UI (optional).** If the app has a web UI, ask how to start it and its
+   base URL and write a `ui` block (`base_url`, `start_command`) so QA can
+   take screenshots; check with `${CLAUDE_PLUGIN_ROOT}/scripts/serve-check.sh`.
+9. **Merge policy.** Ask which card kinds may merge without a person, and
+   whether the repo has database migrations; write `merge_policy` and
+   `migrations` (default: migrations held for a human).
+10. **Jev decisions (optional).** If `env-names.sh` shows
    `AI_GATEWAY_API_KEY`, offer Jev (TypeSafe, via Vercel AI Gateway) for fast
    triage decisions. On yes, add a `jev` block with `enabled: true` and every
    point in `shadow` (shape in the example config), and run
    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jev.py check`. Never start a point
    in `live`; the user switches it after `jev.py report` says it's ready.
-8. Write `.claude/factory.json`, add `.claude/worktrees/` and
+11. Write `.claude/factory.json`, add `.claude/worktrees/` and
    `.claude/factory/` to `.gitignore`, then run `board.sh doctor` and show
    the result.
 
 ### `doctor`
 
-Run `board.sh doctor` and explain any ✗ line with the fix.
+Run `board.sh doctor` and `skills-ready.py --all` and explain any ✗ line or
+missing skill with the fix.
 
 ### `status`
 
@@ -101,6 +121,22 @@ to `factory:wip`), anything in Blocked with its last comment's first line,
 and PRs labelled `factory:needs-human`. If `jev.enabled`, add a one-line
 summary per decision point from `jev.py report` (mode, agreement, advice)
 and this month's spend. Read-only: change nothing.
+
+### `lint [--backlog]`
+
+Follow `${CLAUDE_PLUGIN_ROOT}/skills/board/references/lint.md`. The flags
+come from `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lint-cards.py --json`;
+tightening is interactive and needs the user's approval for every edit.
+Card bodies follow the card format in the writing standard and must pass
+`check-writing.py card`.
+
+### `migrate [--dry-run]`
+
+Run `${CLAUDE_PLUGIN_ROOT}/scripts/board-migrate.sh --dry-run` and show the
+plan. If the user agrees (and didn't pass `--dry-run`), run it without
+`--dry-run` and show the result. It adds missing columns and moves cards out
+of legacy columns (Building, In progress, Todo, In review…); it never
+deletes a column.
 
 ### `stop`
 
@@ -115,8 +151,10 @@ run picks them up from there. Do not delete branches or worktrees.
    and `pin`. Keep them for the whole run and repeat them in any resume
    hint. Inside a Codex session the host is `codex` with no flag
    (`docs/hosts.md`).
-1. **Preflight.** `board.sh doctor` must print `ready`; otherwise stop and
-   show it. Run `worktree.sh prune`.
+1. **Preflight.** `board.sh doctor` must print `ready`, and
+   `skills-ready.py --all` must exit 0; otherwise stop and show what's
+   missing (for skills, the install commands it printed). Run
+   `worktree.sh prune`.
 2. **Recover.** Any card with `factory:wip` at start-up is a leftover from
    a crashed run (nothing of yours is running yet): release it and comment
    `♻️ released stale claim`.
@@ -127,10 +165,10 @@ run picks them up from there. Do not delete branches or worktrees.
    3. `board.sh next build` (cards a lane bounced back)
    4. `board.sh next ready`
    Never put two lanes on the same card.
-4. **Lint Ready cards before building.** Read the issue body. If there are no
-   checkable acceptance criteria (a checklist or an "Acceptance criteria"
-   section), do not build it: comment asking for them, and move it to
-   Backlog. Vague cards produce confident wrong code.
+4. **Lint Ready cards before building.** `lint-cards.py --json --issue <n>`
+   decides whether the card has checkable criteria; any flag sends it to
+   Backlog with the flagged lines as the comment (`/factory:board lint` is
+   where the user tightens it). Vague cards produce confident wrong code.
 
    With `jev.enabled`, also run `jev.py decide card_lint <title+body file> --id <n>`:
    - Always record your own lint result: `jev.py record card_lint <n> pass|fail`.
@@ -174,6 +212,9 @@ run picks them up from there. Do not delete branches or worktrees.
    PRs held for a human (`factory:needs-human`), anything still in flight.
    Offer `/factory:visual recap` for a merged branch if the user wants a
    picture of it.
+9. **Calibrate (optional).** Follow
+   `${CLAUDE_PLUGIN_ROOT}/skills/board/references/calibration.md`; it skips
+   silently unless configured.
 
 Keep the user's view quiet while running: one line per wave
 (`wave 3: review #12, qa #15, build #18 (hard → session)`) and the final report. Detailed
@@ -182,6 +223,8 @@ evidence belongs in issue and PR comments, not the chat.
 ## Rules
 
 - Never merge except through `merge-gate.sh`. Never push to the base branch.
+- Never merge or unlabel a PR held with `factory:needs-human`; that's the
+  human's call.
 - Never edit an issue's acceptance criteria to make work pass.
 - If GitHub calls fail repeatedly (auth, rate limit, 5xx), stop the run and
   say so; do not loop.
