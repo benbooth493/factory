@@ -84,6 +84,38 @@ A source that can't be reached is reported as **unavailable** with the
 reason, never as "nothing found". Collect is read-only towards Sentry and
 PostHog, and strips query strings and user identifiers from what it files.
 
+## Jev: fast typed decisions (optional)
+
+[Jev](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe) from
+TypeSafe doesn't write text; it answers questions you define, with a
+probability for each answer, in well under a second and for a fraction of a
+cent. factory calls it through Vercel AI Gateway at four points where a quick
+judgement is enough:
+
+| Point | Question | When live, it… |
+|---|---|---|
+| `collect_triage` | Is this Sentry/PostHog signal actionable, noise or expected? How severe? | drops near-certain noise (P ≥ 0.9) before a Claude verifier is spent on it |
+| `card_lint` | Does the card have checkable criteria? How hard is it? | picks the Build lane model (`routing`: easy/medium → Sonnet, hard → Opus) |
+| `risk_veto` | Does the PR touch auth, payments, secrets, migrations, user-data deletion or cloud permissions? | holds the merge for a human (`factory:needs-human`). **It can only block, never approve** |
+| `bounce_reason` | Missing test, logic bug, misread criteria, scope creep or environment? | labels the bounce so Build starts in the right place |
+
+Every point starts in **shadow**: Jev's answer is logged next to what Claude
+decided at the same moment, and nothing acts on it.
+
+```
+python3 scripts/jev.py check     # connectivity, model, cost of one call
+python3 scripts/jev.py report    # agreement and spend per decision point
+```
+
+`report` says "ready for live" once a point has 30+ comparisons, at least
+90% agreement and none of the expensive mistakes (dropping a bug Claude kept,
+waving through a change Claude flagged). Then set that point to `"live"` in
+config. If Jev is unreachable, out of credit or over `monthly_budget_usd`,
+factory carries on exactly as it would without it.
+
+Key: `AI_GATEWAY_API_KEY` in the environment or `.env`. Decisions are logged
+to `.claude/factory/jev-log.jsonl` (keep it out of git).
+
 ## Config
 
 `.claude/factory.json` in your repo (`onboard` writes it):
@@ -103,7 +135,7 @@ PostHog, and strips query strings and user identifiers from what it files.
 }
 ```
 
-Add a `collect` block for Sentry and PostHog (`onboard` detects both and
+Add a `jev` block to enable Jev decisions, and a `collect` block for Sentry and PostHog (`onboard` detects both and
 tests the connection). Set `auto_merge: false` to have the gate stop at "all green" and leave the
 merge button to you. Full example in [`examples/factory.json`](examples/factory.json).
 
@@ -114,7 +146,9 @@ way factory merges. It refuses unless the PR head is exactly the commit the
 reviewer approved, every check has passed, there are no conflicts, and your
 `verify_commands` pass on the head merged with the current base. The merge
 is pinned with `--match-head-commit`, so a push that sneaks in afterwards
-makes GitHub reject it. No `verify_commands`, no merge.
+makes GitHub reject it. No `verify_commands`, no merge. With Jev's
+`risk_veto` live, a green but sensitive change is held for a human instead
+of merged.
 
 **Guard hooks** run on every tool call while the plugin is enabled:
 
@@ -150,7 +184,7 @@ skills/qa/        QA lane
 skills/review/    Review lane
 skills/collect/   Sentry + PostHog → verified Backlog cards
 scripts/          board.sh (gh project wrapper), worktree.sh, merge-gate.sh,
-                  collect.py (fetch, dedupe, render, file), env-names.sh
+                  collect.py (fetch, dedupe, render, file), jev.py, env-names.sh
 hooks/            guard_bash.py, guard_files.py, hooks.json
 tests/            hook and collector unit tests (recorded Sentry/PostHog payloads);
                   board and gate tests against a fake gh
@@ -171,6 +205,8 @@ shellcheck scripts/*.sh
   each other's claims as stale.
 - QA is only as good as what can be run headlessly in your repo. UI
   evidence needs Playwright in the project.
+- Jev is early access, and its accuracy and calibration figures are mostly
+  the vendor's own. That's why every point starts in shadow.
 - The Sentry and PostHog queries are tested against recorded payloads, not
   yet against live accounts. PostHog exception grouping depends on SDK
   version; if your exceptions come out ungrouped, tell us.

@@ -67,6 +67,23 @@ Put all candidates in one file as `{"candidates": [...]}` and run
   reopen #N rather than make a new card.
 - `resolved` (closed card #N, not seen since closing) → drop.
 
+## 3b. Jev triage (only when `jev.enabled` is true in config)
+
+For each `new` or `regressed` candidate, write its JSON to a file and run
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jev.py decide collect_triage <file> --id <fingerprint>`.
+It returns one line of JSON:
+
+- `available: false` → ignore Jev for this candidate; verify as normal.
+- `act: true` and `label: "noise"` (live mode, near-certain noise) → don't
+  launch a verifier. List it in the summary as *dropped by Jev* with its
+  `p_noise`.
+- Anything else (shadow mode, or `label: "keep"`) → verify as normal.
+
+Verify candidates in descending `severity` order when Jev gave one. After a
+verifier returns, record Claude's answer for every candidate Jev also judged:
+`jev.py record collect_triage <fingerprint> noise` if the verdict was
+`noise`, otherwise `keep`. This is what `jev.py report` compares against.
+
 ## 4. Verify — one fresh verifier per candidate
 
 Launch one subagent per `new` or `regressed` candidate, all in one message

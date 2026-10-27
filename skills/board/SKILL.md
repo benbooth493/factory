@@ -16,6 +16,7 @@ Paths (already resolved for this install):
 - Board CLI: `${CLAUDE_PLUGIN_ROOT}/scripts/board.sh`
 - Worktrees: `${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh`
 - Merge gate: `${CLAUDE_PLUGIN_ROOT}/scripts/merge-gate.sh`
+- Jev decisions (optional): `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jev.py`
 - Lane instructions: `${CLAUDE_PLUGIN_ROOT}/skills/{build,qa,review}/SKILL.md`
 - Project config: `.claude/factory.json` in the repo root (example in
   `${CLAUDE_PLUGIN_ROOT}/examples/factory.json`)
@@ -75,8 +76,15 @@ Goal: a working `.claude/factory.json` and a board with the right columns.
    then test each with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/collect.py check <source>`
    and show the result. A failed check leaves the source enabled but
    reported as unavailable; it is not fatal to onboarding.
-7. Write `.claude/factory.json`, add `.claude/worktrees/` to `.gitignore`,
-   then run `board.sh doctor` and show the result.
+7. **Jev decisions (optional).** If `env-names.sh` shows
+   `AI_GATEWAY_API_KEY`, offer Jev (TypeSafe, via Vercel AI Gateway) for fast
+   triage decisions. On yes, add a `jev` block with `enabled: true` and every
+   point in `shadow` (shape in the example config), and run
+   `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/jev.py check`. Never start a point
+   in `live`; the user switches it after `jev.py report` says it's ready.
+8. Write `.claude/factory.json`, add `.claude/worktrees/` and
+   `.claude/factory/` to `.gitignore`, then run `board.sh doctor` and show
+   the result.
 
 ### `doctor`
 
@@ -85,8 +93,10 @@ Run `board.sh doctor` and explain any ✗ line with the fix.
 ### `status`
 
 Run `board.sh status`, then list in-flight cards (`board.sh items` filtered
-to `factory:wip`) and anything in Blocked with its last comment's first line.
-Read-only: change nothing.
+to `factory:wip`), anything in Blocked with its last comment's first line,
+and PRs labelled `factory:needs-human`. If `jev.enabled`, add a one-line
+summary per decision point from `jev.py report` (mode, agreement, advice)
+and this month's spend. Read-only: change nothing.
 
 ### `stop`
 
@@ -113,6 +123,15 @@ run picks them up from there. Do not delete branches or worktrees.
    checkable acceptance criteria (a checklist or an "Acceptance criteria"
    section), do not build it: comment asking for them, and move it to
    Backlog. Vague cards produce confident wrong code.
+
+   With `jev.enabled`, also run `jev.py decide card_lint <title+body file> --id <n>`:
+   - Always record your own lint result: `jev.py record card_lint <n> pass|fail`.
+   - In **live** mode (`act: true`), Jev's `label` decides pass/fail (you may
+     still fail a card Jev passed if it plainly has no criteria — never the
+     reverse), and its `model` picks the Build lane model for this card,
+     overriding `models.build`.
+   - In shadow mode or when `available` is false, your judgement and
+     `models.build` stand.
 5. **Dispatch.** For each card, `board.sh claim <n>` (skip the card if the
    claim fails), then launch one subagent per card, all in a single message
    so they run in parallel. Prompt each one with:
