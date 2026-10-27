@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Fake codex for tests. Logs argv to $CODEX_LOG and the stdin prompt to
+# $CODEX_PROMPT, then behaves per $FAKE_CODEX:
+#   ok      write the RESULT line to --output-last-message (default)
+#   stdout  print the RESULT line only to stdout
+#   none    finish without any RESULT line
+#   fail    print a RESULT line, then exit 2
+#   hang    never finish (until killed)
+set -euo pipefail
+printf '%s\n' "$@" > "${CODEX_LOG:-/dev/null}"
+cat > "${CODEX_PROMPT:-/dev/null}"
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in --output-last-message) out="$2"; shift 2 ;; *) shift ;; esac
+done
+line="${FAKE_RESULT:-RESULT: build #7 qa pr=12 sha=abc1234}"
+echo "working..."
+echo "plugin root: ${CLAUDE_PLUGIN_ROOT:-unset}"
+case "${FAKE_CODEX:-ok}" in
+  ok) printf 'All done.\n%s\n' "$line" > "$out" ;;
+  stdout) echo "$line" ;;
+  none) echo "I gave up." > "$out" ;;
+  fail) echo "$line"; exit 2 ;;
+  hang) exec sleep 30 ;;
+esac

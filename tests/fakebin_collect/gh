@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Fake gh for collect filing tests: logs every call (and stdin) to $GH_LOG.
+set -euo pipefail
+log="${GH_LOG:-/dev/null}"
+echo "gh $*" >> "$log"
+fx="$(cd "$(dirname "$0")/../fixtures" && pwd)"
+case "$1 ${2:-}" in
+  "issue create")
+    cat >> "$log"
+    echo "https://github.com/acme/app/issues/99" ;;
+  "issue comment")
+    cat >> "$log" ;;
+  "issue edit"|"issue reopen"|"label create"|"project item-add"|"project item-edit") : ;;
+  "issue view") echo '{"url": "https://github.com/acme/app/issues/12"}' ;;
+  "project item-list")
+    printf '{"items": [%s, %s], "totalCount": 2}\n' \
+      '{"id": "PVTI_12", "status": null, "labels": [], "content": {"type": "Issue", "number": 12, "title": "Export", "url": "https://github.com/acme/app/issues/12"}}' \
+      '{"id": "PVTI_99", "status": null, "labels": [], "content": {"type": "Issue", "number": 99, "title": "New", "url": "https://github.com/acme/app/issues/99"}}' ;;
+  "project field-list") cat "$fx/fields.json" ;;
+  "project view") echo "PVT_project" ;;
+  "api rate_limit") echo 4000 ;;
+  *) echo "fake gh (collect): unhandled: $*" >&2; exit 1 ;;
+esac

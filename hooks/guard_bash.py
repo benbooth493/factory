@@ -51,13 +51,18 @@ READERS = {
 PROTECTED = {"main", "master"}
 
 
-def config_base(root: str) -> Optional[str]:
+def config_protected(root: str) -> set:
+    """base_branch plus any protected_branches from the project config."""
     path = os.environ.get("FACTORY_CONFIG") or os.path.join(root, ".claude", "factory.json")
     try:
         with open(path) as fh:
-            return json.load(fh).get("base_branch")
+            cfg = json.load(fh)
     except (OSError, ValueError):
-        return None
+        return set()
+    names = set(b for b in cfg.get("protected_branches") or [] if isinstance(b, str))
+    if isinstance(cfg.get("base_branch"), str):
+        names.add(cfg["base_branch"])
+    return names
 
 
 def is_secret(path: str) -> bool:
@@ -157,10 +162,7 @@ def check_push(words: List[str], root: str, here: str) -> Optional[str]:
             return "force push blocked; use --force-with-lease on your own factory/* branch"
         if a == "--delete" or a == "-d":
             return "deleting remote branches by push is blocked"
-    protected = set(PROTECTED)
-    base = config_base(root)
-    if base:
-        protected.add(base)
+    protected = set(PROTECTED) | config_protected(root)
     refspecs = positional(args)[1:]  # first positional is the remote
     for spec in refspecs:
         if spec.startswith("+"):

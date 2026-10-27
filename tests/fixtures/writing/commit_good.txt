@@ -1,0 +1,7 @@
+Reject uploads over 10 MB before sending them
+
+The server answered 413 and the client never handled it, so the spinner
+ran forever. Checking the size first shows the error at once.
+
+Closes #790
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

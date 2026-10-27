@@ -1,0 +1,25 @@
+{
+  "groups": [
+    {
+      "id": "you-type",
+      "title": "You type",
+      "skills": {
+        "board": "Orchestrator: onboard, doctor, status, run and stop the board; runs the three lanes wave by wave.",
+        "collect": "Finds real problems in production and files verified, deduplicated Backlog cards.",
+        "ui-refine-loop": "Critique then refine one page or component until it looks right, with screenshots.",
+        "visual": "One self-contained HTML page: a branch recap, a plan, or a map of a folder.",
+        "git-sync": "Commit per logical change, merge-pull, push without force, report."
+      }
+    },
+    {
+      "id": "board-runs",
+      "title": "The board runs",
+      "skills": {
+        "build": "Build lane: worktree, test first, smallest change, draft PR.",
+        "qa": "QA lane: evidence for each acceptance criterion, or bounce to Build.",
+        "review": "Review lane: reads the diff cold, approves one SHA, merges through the gate."
+      }
+    }
+  ],
+  "hidden": ["scripts/build-site.py", "scripts/skill-map.py"]
+}

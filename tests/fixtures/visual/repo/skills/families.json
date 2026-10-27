@@ -1,0 +1,4 @@
+{"groups": [
+  {"id": "you-type", "title": "You type", "skills": {"alpha": "Alpha orchestrates.", "missing": "Not on disk."}},
+  {"id": "board-runs", "title": "The board runs", "skills": {"beta": "Beta lane."}}
+], "hidden": ["scripts/hidden.py"]}

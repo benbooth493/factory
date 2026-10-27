@@ -1,0 +1,9 @@
+[
+  {"number": 10, "title": "On the board already", "body": "x", "labels": [], "url": "https://github.com/acme/app/issues/10", "createdAt": "2026-09-01T00:00:00Z", "updatedAt": "2026-10-01T00:00:00Z"},
+  {"number": 12, "title": "Export button does nothing on Safari", "body": "Reported by jo@example.com via https://app.acme.dev/export?token=abc123 — clicking Export shows nothing.", "labels": [{"name": "bug"}], "url": "https://github.com/acme/app/issues/12", "createdAt": "2026-09-20T00:00:00Z", "updatedAt": "2026-10-20T00:00:00Z"},
+  {"number": 13, "title": "Add dark mode to settings", "body": "Would be nice.", "labels": [{"name": "enhancement"}], "url": "https://github.com/acme/app/issues/13", "createdAt": "2026-10-02T00:00:00Z", "updatedAt": "2026-10-02T00:00:00Z"},
+  {"number": 14, "title": "How do I reset my password?", "body": "?", "labels": [{"name": "question"}], "url": "https://github.com/acme/app/issues/14", "createdAt": "2026-10-03T00:00:00Z", "updatedAt": "2026-10-03T00:00:00Z"},
+  {"number": 15, "title": "Already collected", "body": "<sub>factory-fingerprint: `sentry:1`</sub>", "labels": [{"name": "factory:collected"}], "url": "https://github.com/acme/app/issues/15", "createdAt": "2026-10-03T00:00:00Z", "updatedAt": "2026-10-03T00:00:00Z"},
+  {"number": 16, "title": "Stray PR-shaped entry", "body": "", "labels": [], "url": "https://github.com/acme/app/pull/16", "createdAt": "2026-10-03T00:00:00Z", "updatedAt": "2026-10-03T00:00:00Z"},
+  {"number": 17, "title": "Clean up old cron scripts", "body": "They are unused.", "labels": [], "url": "https://github.com/acme/app/issues/17", "createdAt": "2026-10-05T00:00:00Z", "updatedAt": "2026-10-05T00:00:00Z"}
+]

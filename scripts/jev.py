@@ -8,7 +8,8 @@ decision points, each of which is `off`, `shadow` or `live` in config:
   collect_triage  Sentry/PostHog candidate: actionable, noise, or expected?
                   live: drop near-certain noise before a Claude verifier runs.
   card_lint       Ready card: checkable acceptance criteria? how hard?
-                  live: pick the Build lane model from the difficulty.
+                  live: its difficulty grades the card for the router
+                  (scripts/route.py maps the grade to a model).
   risk_veto       PR about to merge: does it touch sensitive areas?
                   live: hold the merge for a human. It can only ever block.
   bounce_reason   QA/Review failure: what kind of failure is it?
@@ -137,7 +138,6 @@ def settings(cfg: dict) -> dict:
     s.setdefault("monthly_budget_usd", 5.0)
     s["points"] = {p: (s.get("points") or {}).get(p, "shadow") for p in POINTS}
     s["thresholds"] = {**DEFAULT_THRESHOLDS, **(s.get("thresholds") or {})}
-    s.setdefault("routing", {"easy": "sonnet", "medium": "sonnet", "hard": "opus"})
     return s
 
 
@@ -252,7 +252,7 @@ def interpret(point: str, answers: Dict[str, dict], s: dict) -> Tuple[str, dict]
         diff = answers.get("difficulty", {})
         t = tier(float(diff.get("score") or 0), 2)
         return ("pass" if p >= th["criteria"] else "fail"), {
-            "p_criteria": round(p, 3), "difficulty": t, "model": s["routing"].get(t)}
+            "p_criteria": round(p, 3), "difficulty": t}
     if point == "risk_veto":
         p = float(answers.get("sensitive", {}).get("noul", 0.0))
         return ("hold" if p >= th["sensitive"] else "ok"), {"p_sensitive": round(p, 3)}

@@ -3,6 +3,43 @@
 set -euo pipefail
 fx="$(cd "$(dirname "$0")/../fixtures" && pwd)"
 echo "gh $*" >> "${GH_LOG:-/dev/null}"
+
+# FAKE_BOARD (a JSON file {options:[{id,name,color,description}], items:[...]})
+# makes the board stateful: item-list, item-edit and the Status options
+# GraphQL read and write it, like GitHub would. A rewrite of the options gives
+# every option a new id and clears every card's Status, as GitHub may.
+board_mode() {
+  local jqf="" id="" opt="" new
+  case "$1 ${2:-}" in
+    "project item-list") jq '{items: .items}' "$FAKE_BOARD" ;;
+    "project item-edit")
+      while [ $# -gt 0 ]; do
+        case "$1" in --id) id="$2" ;; --single-select-option-id) opt="$2" ;; esac
+        shift
+      done
+      new=$(jq --arg id "$id" --arg o "$opt" '
+        (.options | map(select(.id == $o)) | first | .name) as $n
+        | if $n == null then error("no option \($o)") else . end
+        | .items |= map(if .id == $id then .status = $n else . end)' "$FAKE_BOARD") || exit 1
+      printf '%s\n' "$new" > "$FAKE_BOARD"; echo '{}' ;;
+    "api graphql")
+      while [ $# -gt 0 ]; do [ "$1" = "--jq" ] && jqf="$2"; shift; done
+      new=$(cat)
+      printf '%s\n' "$new" >> "${GH_LOG:-/dev/null}"
+      if jq -e '.query | contains("updateProjectV2Field")' <<<"$new" >/dev/null; then
+        [ -z "${FAKE_GRAPHQL_FAIL:-}" ] || { echo "fake gh: graphql failed" >&2; exit 1; }
+        jq --argjson v "$(jq '.variables.opts' <<<"$new")" \
+          '.options = [$v | to_entries[] | .value + {id: "new_\(.key)"}] | .items |= map(.status = null)' \
+          "$FAKE_BOARD" > "$FAKE_BOARD.tmp" && mv "$FAKE_BOARD.tmp" "$FAKE_BOARD"
+        echo '{"data":{}}'
+      else
+        jq "{data: {node: {options: .options}}} | ${jqf:-.}" "$FAKE_BOARD"
+      fi ;;
+    *) return 1 ;;
+  esac
+}
+if [ -n "${FAKE_BOARD:-}" ] && board_mode "$@"; then exit 0; fi
+
 case "$1 ${2:-}" in
   "project item-list") cat "$fx/items.json" ;;
   "project field-list") cat "$fx/fields.json" ;;
@@ -10,13 +47,25 @@ case "$1 ${2:-}" in
   "project item-edit") echo '{}' ;;
   "api rate_limit") echo 4000 ;;
   "issue view")
-    # labels come from FAKE_LABELS (JSON array), default none
-    echo "${FAKE_LABELS:-[]}" ;;
+    # FAKE_ISSUE (a JSON object) answers full views; otherwise labels come
+    # from FAKE_LABELS (JSON array), default none
+    if [ -n "${FAKE_ISSUE:-}" ]; then echo "$FAKE_ISSUE"; else echo "${FAKE_LABELS:-[]}"; fi ;;
   "issue edit"|"issue comment"|"label create") : ;;
+  "pr comment")
+    # keep comment bodies sent on stdin, so tests can read them
+    case " $* " in *" --body-file - "*) cat >> "${GH_LOG:-/dev/null}" ;; esac ;;
   "pr view")
+    # FAKE_PR_LABELS: label names, FAKE_FILES: [{path,additions,deletions}],
+    # FAKE_CLOSES: issue numbers the PR closes (all JSON arrays)
+    default_files='[{"path":"b.txt","additions":1,"deletions":0}]'
     jq -n --arg h "${FAKE_HEAD:?}" --arg m "${FAKE_MERGEABLE:-MERGEABLE}" --arg c "${FAKE_CHECK:-SUCCESS}" \
+      --argjson l "${FAKE_PR_LABELS:-[]}" --argjson f "${FAKE_FILES:-$default_files}" \
+      --argjson i "${FAKE_CLOSES:-[]}" \
       '{headRefOid:$h, headRefName:"factory/3", baseRefName:"main", mergeable:$m, isDraft:true,
-        state:"OPEN", statusCheckRollup:[{conclusion:$c}]}' ;;
+        state:"OPEN", statusCheckRollup:[{conclusion:$c}],
+        labels:[$l[] | {name:.}], files:$f, changedFiles:($f | length),
+        additions:([$f[].additions] | add // 0), deletions:([$f[].deletions] | add // 0),
+        closingIssuesReferences:[$i[] | {number:.}]}' ;;
   "pr ready"|"pr merge"|"pr edit") : ;;
   "pr diff") printf 'diff --git a/db/migrate.sql b/db/migrate.sql\n+ALTER TABLE users DROP COLUMN email;\n' ;;
   "auth status") echo "  - Token scopes: 'project', 'repo'" ;;

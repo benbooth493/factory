@@ -1,0 +1,46 @@
+name: pages
+
+# Builds the docs site (landing page + skill map) from the repo with
+# scripts/build-site.py and publishes it to https://benbooth493.github.io/factory/.
+# Only repo files are read; no event input is interpolated into commands.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Test the renderer and site build
+        run: python -m unittest tests.test_visual tests.test_site -v
+      - name: Build _site
+        run: python scripts/build-site.py --out _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

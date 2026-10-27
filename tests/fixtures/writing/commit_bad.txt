@@ -1,0 +1,2 @@
+Added a comprehensive size check for uploads in the receipts page component.
+This commit aims to fix the spinner by checking the size in order to avoid a 413 response from the server side.

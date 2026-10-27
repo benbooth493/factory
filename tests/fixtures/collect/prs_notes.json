@@ -1,0 +1,25 @@
+{
+  "31": {
+    "issues": [
+      {"user": {"login": "factory-bot", "type": "User"}, "created_at": "2026-10-14T09:00:00Z", "body": "🧪 QA FAIL at abc1234\nReason: logic_bug\n- [✗] Sep 1 rows land in September — `new Date('2026-09-01').getMonth()` reads local time, rows land in August"},
+      {"user": {"login": "factory-bot", "type": "User"}, "created_at": "2026-10-15T09:00:00Z", "body": "🧪 QA PASS at def5678\n- [x] Sep 1 rows land in September"},
+      {"user": {"login": "dana", "type": "User"}, "created_at": "2026-10-15T09:30:00Z", "body": "LGTM"}
+    ],
+    "reviews": [
+      {"user": {"login": "factory-bot", "type": "User"}, "state": "COMMENTED", "submitted_at": "2026-10-15T09:40:00Z", "body": "✅ Review approved at def5678\nChecked date parsing; ping @dana if it regresses (dana@acme.dev)."}
+    ],
+    "inline": [
+      {"user": {"login": "coderabbitai[bot]", "type": "Bot"}, "created_at": "2026-10-14T08:00:00Z", "path": "src/reports/monthly.ts", "line": 42, "body": "Date-only strings parse as UTC midnight; `getMonth()` uses local time. Use getUTCMonth()."}
+    ]
+  },
+  "34": {
+    "issues": [],
+    "reviews": [
+      {"user": {"login": "factory-bot", "type": "User"}, "state": "COMMENTED", "submitted_at": "2026-10-19T09:00:00Z", "body": "Reason: logic_bug\n1. src/budgets/alerts.ts:18 — `new Date(month + '-01').getMonth()` puts the 1st in the prior month west of UTC. Use Date.UTC."}
+    ],
+    "inline": [
+      {"user": {"login": "eric", "type": "User"}, "created_at": "2026-10-19T10:00:00Z", "path": "src/budgets/alerts.ts", "original_line": 18, "body": "Same UTC-vs-local month bug we had in the reports export, see https://github.com/acme/app/pull/31?diff=split"}
+    ]
+  },
+  "36": {"issues": [], "reviews": [], "inline": []}
+}

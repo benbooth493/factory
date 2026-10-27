@@ -12,6 +12,15 @@ and you assume nothing the PR description claims.
 Scripts: `B=${CLAUDE_PLUGIN_ROOT}/scripts/board.sh`,
 `W=${CLAUDE_PLUGIN_ROOT}/scripts/worktree.sh`.
 
+## Skills
+
+Check with `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/skills-ready.py --lane qa`
+(exit 10 → comment which skill is missing, release, `RESULT: qa #<n> blocked reason="missing skill"`).
+Use `mattpocock-skills:tdd` to judge whether tests really assert the
+criteria and to describe any missing test precisely enough for Build to
+write it (you don't write product code or tests on the branch), and
+`mattpocock-skills:diagnosing-bugs` to pin down a failure before you report it.
+
 ## Steps
 
 1. **Find the PR and pin the commit.** `gh issue view <n> --comments`, find
@@ -23,8 +32,10 @@ Scripts: `B=${CLAUDE_PLUGIN_ROOT}/scripts/board.sh`,
 4. **Test each acceptance criterion, one by one.** For each, do whatever
    actually demonstrates it: run the relevant test and read what it asserts,
    exercise the CLI or API with real input, start the app and hit the
-   endpoint, or (for UI, if Playwright is available in the repo) take a
-   screenshot. A criterion with only "the code looks right" as evidence is
+   endpoint, or, for any card that touches UI, take screenshots as
+   `${CLAUDE_PLUGIN_ROOT}/skills/qa/references/screenshots.md` describes
+   (three viewports, committed to the PR branch before you comment, embedded
+   inline on pass and on fail). A criterion with only "the code looks right" as evidence is
    not met.
 5. **Look for the gaps.** Edge cases the criteria imply (empty input, error
    paths, permissions), and whether the tests would fail if the feature
@@ -42,8 +53,13 @@ Comment on the PR (`gh pr comment`) and the issue:
 🧪 QA <PASS|FAIL> at <short sha>
 - [x|✗] <criterion> — <how verified> → <result>
 Checks: <command> ✅|❌
+Screenshots: <table from references/screenshots.md | not applicable (no UI change)>
 Gaps: <none | list>
 ```
+
+Write the comment to a file and check it with
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check-writing.py comment <file>`
+before posting (`gh pr comment --body-file <file>`).
 
 ## Hand off
 

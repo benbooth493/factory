@@ -1,0 +1,5 @@
+[
+  {"number": 31, "title": "Monthly report export", "url": "https://github.com/acme/app/pull/31", "mergedAt": "2026-10-15T10:00:00Z", "body": "Closes #21", "labels": []},
+  {"number": 34, "title": "Budget alerts per month", "url": "https://github.com/acme/app/pull/34", "mergedAt": "2026-10-20T10:00:00Z", "body": "Fixes #24", "labels": [{"name": "bounce:logic_bug"}]},
+  {"number": 36, "title": "Tidy footer", "url": "https://github.com/acme/app/pull/36", "mergedAt": "2026-10-22T10:00:00Z", "body": "No issue", "labels": []}
+]

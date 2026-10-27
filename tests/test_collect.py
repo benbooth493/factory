@@ -7,6 +7,7 @@ import datetime as dt
 import io
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -274,6 +275,361 @@ class RenderTest(unittest.TestCase):
         body = collect.render(dict(self.card, acceptance=["Cart total shows £0.00 when empty"]))
         self.assertIn("- [ ] Cart total shows £0.00 when empty", body)
         self.assertNotIn("A test reproduces", body)
+
+
+# --- github, prs, architecture -------------------------------------------------
+
+class FakeGH:
+    """Answers read-only gh calls from fixtures."""
+
+    def __init__(self, remaining=5000, fail_on=()):
+        self.calls = []
+        self.remaining = remaining
+        self.fail_on = fail_on
+        self.notes = fixture("prs_notes.json")
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        joined = " ".join(args)
+        if any(f in joined for f in self.fail_on):
+            raise collect.Unavailable(f"gh {args[0]} failed: HTTP 403")
+        if args[:2] == ("project", "item-list"):
+            return json.dumps(fixture("github_board.json"))
+        if args[:2] == ("issue", "list") and "open" in args:
+            return json.dumps(fixture("github_issues.json"))
+        if args[:2] == ("issue", "list"):
+            return json.dumps(fixture("prs_issues.json"))
+        if args[:2] == ("pr", "list"):
+            return json.dumps(fixture("prs_merged.json"))
+        if args == ("api", "rate_limit"):
+            return json.dumps({"resources": {"core": {"remaining": self.remaining, "reset": 1798000000}}})
+        if args[0] == "api":
+            parts = args[1].split("?")[0].split("/")
+            n, kind = parts[-2], parts[-1]
+            key = {"comments": "inline" if parts[-3] == "pulls" else "issues", "reviews": "reviews"}[kind]
+            return json.dumps(self.notes[n][key])
+        raise AssertionError(f"unexpected gh {joined}")
+
+
+class GHBase(unittest.TestCase):
+    def setUp(self):
+        self.gh = FakeGH()
+        self._orig = collect.GH
+        collect.GH = self.gh
+        self.addCleanup(setattr, collect, "GH", self._orig)
+
+
+class GitHubSourceTest(GHBase):
+    def test_only_open_issues_not_on_board(self):
+        cands, raw, errors = collect.github_fetch(CFG, 14, "x")
+        self.assertEqual([c["number"] for c in cands], [12, 13, 17])
+        self.assertEqual(errors, {})
+        self.assertFalse(raw["truncated"])
+
+    def test_candidates_are_adoptions_with_stable_fingerprints(self):
+        cands, _, _ = collect.github_fetch(CFG, 14, "x")
+        by_n = {c["number"]: c for c in cands}
+        self.assertTrue(all(c["adopt"] for c in cands))
+        self.assertEqual(by_n[12]["fingerprint"], "github:12")
+        self.assertEqual((by_n[12]["kind"], by_n[13]["kind"], by_n[17]["kind"]), ("bug", "feature", "task"))
+
+    def test_personal_data_scrubbed(self):
+        cands, _, _ = collect.github_fetch(CFG, 14, "x")
+        dumped = json.dumps(cands)
+        self.assertNotIn("jo@example.com", dumped)
+        self.assertNotIn("token=abc123", dumped)
+        self.assertIn("https://app.acme.dev/export", dumped)
+
+    def test_board_failure_is_unavailable(self):
+        self.gh.fail_on = ("item-list",)
+        with self.assertRaises(collect.Unavailable):
+            collect.github_fetch(CFG, 14, "x")
+
+    def test_partial_board_is_unavailable(self):
+        orig = fixture("github_board.json")
+        orig["totalCount"] = 900
+        collect.GH = lambda *a: json.dumps(orig) if a[:2] == ("project", "item-list") else self.gh(*a)
+        with self.assertRaises(collect.Unavailable):
+            collect.github_fetch(CFG, 14, "x")
+
+    def test_disabled(self):
+        with self.assertRaises(LookupError):
+            collect.github_fetch(dict(CFG, collect={"github": {"enabled": False}}), 14, "x")
+
+    def test_adopted_issue_dedupes_by_number(self):
+        cards = [{"number": 12, "state": "OPEN", "closedAt": None, "fingerprint": "github:12"}]
+        got = collect.classify([{"source": "github", "kind": "bug", "fingerprint": "github:12"}], cards)
+        self.assertEqual(got[0]["status"], "duplicate")
+
+
+class PrsSourceTest(GHBase):
+    def test_raw_material_only(self):
+        cands, raw, errors = collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+        self.assertEqual(cands, [], "the skill clusters patterns; the script never invents candidates")
+        self.assertEqual([p["number"] for p in raw["prs"]], [31, 34, 36])
+        self.assertEqual(raw["min_prs"], 2)
+        self.assertEqual(errors, {})
+
+    def test_roles_and_noise(self):
+        _, raw, _ = collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+        pr31 = raw["prs"][0]
+        roles = [n["role"] for n in pr31["notes"]]
+        self.assertIn("qa_fail", roles)
+        self.assertIn("review_approved", roles)
+        self.assertNotIn("qa_pass", roles, "passing QA reports are not problems")
+        self.assertFalse(any(n["body"] == "LGTM" for n in pr31["notes"]))
+        inline = [n for n in pr31["notes"] if n["where"] == "inline"][0]
+        self.assertEqual((inline["author"], inline["path"], inline["line"]), ("bot", "src/reports/monthly.ts", 42))
+        pr34 = raw["prs"][1]
+        self.assertEqual(pr34["notes"][0]["role"], "review_findings")
+        self.assertEqual(pr34["notes"][1]["line"], 18)
+
+    def test_bounce_labels_from_pr_and_linked_issue(self):
+        _, raw, _ = collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+        self.assertEqual(raw["prs"][0]["linked_issues"], [21])
+        self.assertEqual(raw["prs"][0]["bounce_labels"], ["bounce:logic_bug"])
+        self.assertEqual(raw["bounce_reasons"], {"logic_bug": [31, 34]})
+
+    def test_personal_data_scrubbed(self):
+        _, raw, _ = collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+        dumped = json.dumps(raw)
+        self.assertNotIn("dana@acme.dev", dumped)
+        self.assertNotIn("@dana", dumped)
+        self.assertNotIn("diff=split", dumped)
+        self.assertNotIn("login", dumped, "author logins are reduced to human/bot")
+
+    def test_window_and_limit_reach_gh(self):
+        cfg = dict(CFG, collect={"prs": {"limit": 3}})
+        _, raw, _ = collect.prs_fetch(cfg, 14, "2026-10-13T00:00:00+00:00")
+        pr_list = [c for c in self.gh.calls if c[:2] == ("pr", "list")][0]
+        self.assertIn("merged:>=2026-10-13", pr_list)
+        self.assertEqual(pr_list[pr_list.index("--limit") + 1], "3")
+        self.assertTrue(raw["truncated"], "a full page means there may be more")
+
+    def test_rate_limit_caps_volume(self):
+        self.gh.remaining = 56   # (56-50)//3 = 2 PRs affordable
+        _, raw, _ = collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+        self.assertEqual(len(raw["prs"]), 2)
+        self.assertTrue(raw["truncated"])
+
+    def test_exhausted_budget_is_unavailable(self):
+        self.gh.remaining = 10
+        with self.assertRaises(collect.Unavailable) as e:
+            collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+        self.assertIn("budget", str(e.exception))
+
+    def test_comment_volume_capped(self):
+        cfg = dict(CFG, collect={"prs": {"max_comments": 1, "body_chars": 20}})
+        _, raw, _ = collect.prs_fetch(cfg, 14, "2026-10-13T00:00:00+00:00")
+        self.assertEqual(len(raw["prs"][0]["notes"]), 1)
+        self.assertLessEqual(len(raw["prs"][0]["notes"][0]["body"]), 22)
+
+    def test_all_prs_failing_is_unavailable(self):
+        self.gh.fail_on = ("repos/acme/app/",)
+        with self.assertRaises(collect.Unavailable):
+            collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+
+    def test_pr_list_failure_is_unavailable(self):
+        self.gh.fail_on = ("pr list",)
+        with self.assertRaises(collect.Unavailable):
+            collect.prs_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+
+
+class ArchitectureSourceTest(unittest.TestCase):
+    def test_gathers_context_without_candidates(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "docs", "adr"))
+            open(os.path.join(d, "docs", "adr", "0001-use-postgres.md"), "w").close()
+            open(os.path.join(d, "CONTEXT.md"), "w").close()
+            cwd = os.getcwd()
+            os.chdir(d)
+            try:
+                cands, raw, _ = collect.architecture_fetch(CFG, 14, "2026-10-13T00:00:00+00:00")
+            finally:
+                os.chdir(cwd)
+        self.assertEqual(cands, [])
+        self.assertEqual(raw["runner"], "agent")
+        self.assertTrue(raw["context_md"])
+        self.assertEqual(raw["adrs"], ["docs/adr/0001-use-postgres.md"])
+        self.assertEqual(raw["max_findings"], 5)
+
+    def test_disabled(self):
+        with self.assertRaises(LookupError):
+            collect.architecture_fetch(dict(CFG, collect={"architecture": {"enabled": False}}), 14, "x")
+
+
+PRS_CAND = {"source": "prs", "kind": "bug", "fingerprint": "prs:date-only-strings-read-in-local-time",
+            "title": "Parse date-only strings as UTC everywhere",
+            "evidence": {"prs": [{"number": 31, "role": "qa_fail", "quote": "Sep 1 rows land in August"},
+                                 {"number": 34, "role": "review_findings", "quote": "ping @dana"}],
+                         "files": ["src/reports/monthly.ts:42", "src/budgets/alerts.ts:18"]}}
+ARCH_CAND = {"source": "architecture", "kind": "refactor", "fingerprint": "arch:merge-duplicate-date-helpers",
+             "title": "Merge the three date helpers into one module",
+             "evidence": {"files": ["src/lib/dates.ts:1", "src/utils/time.ts:12"]}}
+
+
+class AgentCandidateRulesTest(unittest.TestCase):
+    def test_valid_candidates_pass(self):
+        got = collect.classify([PRS_CAND, ARCH_CAND], [])
+        self.assertEqual([g["status"] for g in got], ["new", "new"])
+
+    def test_prs_pattern_must_recur(self):
+        one = dict(PRS_CAND, evidence={"prs": [{"number": 31}, {"number": 31}]})
+        got = collect.classify([one], [])[0]
+        self.assertEqual(got["status"], "invalid")
+        self.assertIn("2+ PRs", got["reasons"][0])
+
+    def test_prs_kind_and_fingerprint(self):
+        bad = dict(PRS_CAND, kind="ux", fingerprint="prs:Date Bug")
+        self.assertEqual(len(collect.problems(bad)), 2)
+
+    def test_architecture_needs_file_line_and_refactor_kind(self):
+        bad = dict(ARCH_CAND, kind="bug", evidence={"files": ["src/lib/dates.ts"]})
+        self.assertEqual(len(collect.problems(bad)), 2)
+
+    def test_closed_pattern_seen_again_regresses(self):
+        cards = [{"number": 5, "state": "CLOSED", "closedAt": "2026-10-01T00:00:00Z",
+                  "fingerprint": "prs:date-only-strings-read-in-local-time"}]
+        got = collect.classify([dict(PRS_CAND, last_seen="2026-10-20T10:00:00Z")], cards)[0]
+        self.assertEqual((got["status"], got["existing"]), ("regressed", 5))
+
+
+class NewKindRenderTest(unittest.TestCase):
+    def test_refactor_criteria_are_checkable(self):
+        body = collect.render(dict(ARCH_CAND, verdict="real"))
+        self.assertIn("Behaviour is unchanged", body)
+        self.assertIn("existing test suite still passes", body)
+        self.assertIn("measurable", body)
+        self.assertIn("- `src/lib/dates.ts:1`", body)
+        self.assertIn("from an architecture review", body)
+        self.assertNotIn("events from", body, "no fake counts for sources without them")
+
+    def test_process_card(self):
+        body = collect.render(dict(PRS_CAND, kind="process", verdict="real"))
+        self.assertIn("written down where the lanes read it", body)
+        self.assertIn("PR #31 (qa_fail)", body)
+        self.assertNotIn("@dana", body)
+        self.assertEqual(collect.FP_RE.search(body).group(1), PRS_CAND["fingerprint"])
+
+    def test_every_kind_has_defaults(self):
+        for kind in ("bug", "ux", "tracking", "perf", "process", "refactor", "feature", "task"):
+            self.assertIn(kind, collect.DEFAULT_CRITERIA)
+
+    def test_adoption_note(self):
+        note = collect.adoption_note({"fingerprint": "github:12", "verdict": "unclear",
+                                      "acceptance": ["Export downloads a CSV in Safari 17"]})
+        self.assertIn("Adopted by factory collect", note)
+        self.assertIn("needs a human look", note)
+        self.assertIn("- [ ] Export downloads a CSV in Safari 17", note)
+        self.assertIn("factory-fingerprint: `github:12`", note)
+
+
+class SourcesCliTest(unittest.TestCase):
+    def test_defaults(self):
+        cfg = {"collect": {"sentry": {"org": "a"}, "posthog": {"enabled": False},
+                           "github": {"enabled": True}, "prs": {}, "architecture": {"enabled": True}}}
+        self.assertEqual(collect.default_sources(cfg), ["sentry", "github", "architecture"])
+        self.assertEqual(collect.default_sources({}), [])
+
+
+class FilingTest(unittest.TestCase):
+    """Runs `file` against tests/fakebin_collect/gh and checks what gh was asked to do."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.log = os.path.join(self.tmp, "gh.log")
+        cfg = os.path.join(self.tmp, "factory.json")
+        with open(cfg, "w") as fh:
+            json.dump(CFG, fh)
+        self.env = {"FACTORY_CONFIG": cfg, "GH_LOG": self.log,
+                    "PATH": os.path.join(HERE, "fakebin_collect") + os.pathsep + os.environ["PATH"]}
+        self.old = {k: os.environ.get(k) for k in self.env}
+        os.environ.update(self.env)
+        self.addCleanup(self.restore)
+
+    def restore(self):
+        for k, v in self.old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def file(self, cards):
+        path = os.path.join(self.tmp, "cards.json")
+        with open(path, "w") as fh:
+            json.dump(cards, fh)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = collect.main(["file", path])
+        log = ""
+        if os.path.exists(self.log):
+            with open(self.log) as fh:
+                log = fh.read()
+        return code, json.loads(out.getvalue()), log
+
+    def test_adopt_keeps_the_original_issue(self):
+        card = {"source": "github", "kind": "bug", "fingerprint": "github:12", "title": "Export",
+                "number": 12, "url": "https://github.com/acme/app/issues/12", "adopt": True,
+                "verdict": "real", "acceptance": ["Export downloads a CSV in Safari 17"]}
+        code, out, log = self.file([card])
+        self.assertEqual(code, 0)
+        self.assertEqual(out["filed"][0], {"number": 12, "url": card["url"], "status": "adopted"})
+        self.assertNotIn("gh issue create", log)
+        self.assertIn("gh issue edit 12 --repo acme/app --add-label factory:collected", log)
+        self.assertIn("--add-label source:github", log)
+        self.assertIn("gh project item-add 5 --owner acme --url https://github.com/acme/app/issues/12", log)
+        self.assertIn("Adopted by factory collect", log)
+        self.assertIn("project item-edit", log, "moved to Backlog")
+
+    def test_refactor_card_is_created(self):
+        code, out, log = self.file([dict(ARCH_CAND, verdict="real")])
+        self.assertEqual(code, 0)
+        self.assertEqual(out["filed"][0]["number"], 99)
+        self.assertIn("--label kind:refactor", log)
+        self.assertIn("--label source:architecture", log)
+
+    def test_invalid_candidate_is_refused(self):
+        one = dict(PRS_CAND, evidence={"prs": [{"number": 31}]})
+        code, out, log = self.file([one])
+        self.assertEqual(code, collect.EXIT_USAGE)
+        self.assertIn(PRS_CAND["fingerprint"], out["invalid"])
+        self.assertEqual(log, "")
+
+
+class SourceCliTest(GHBase):
+    def run_cli(self, *argv, cfg=CFG):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+            json.dump(cfg, fh)
+        os.environ["FACTORY_CONFIG"] = fh.name
+        self.addCleanup(os.unlink, fh.name)
+        self.addCleanup(os.environ.pop, "FACTORY_CONFIG", None)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = collect.main(list(argv))
+        return code, json.loads(out.getvalue())
+
+    def test_github_unavailable_not_empty(self):
+        self.gh.fail_on = ("issue list",)
+        code, out = self.run_cli("fetch", "github")
+        self.assertEqual(code, collect.EXIT_UNAVAILABLE)
+        self.assertNotIn("candidates", out)
+
+    def test_prs_fetch_cli(self):
+        code, out = self.run_cli("fetch", "prs", "--since", "14d")
+        self.assertEqual(code, 0)
+        self.assertEqual(out["candidates"], [])
+        self.assertEqual(len(out["raw"]["prs"]), 3)
+
+    def test_no_repo_is_disabled(self):
+        cfg = {k: v for k, v in CFG.items() if k != "repo"}
+        code, out = self.run_cli("fetch", "prs", cfg=cfg)
+        self.assertEqual(code, collect.EXIT_DISABLED)
+
+    def test_sources_command(self):
+        cfg = dict(CFG, collect=dict(CFG["collect"], prs={"enabled": True}))
+        code, out = self.run_cli("sources", cfg=cfg)
+        self.assertEqual(out["default"], ["sentry", "posthog", "prs"])
 
 
 if __name__ == "__main__":

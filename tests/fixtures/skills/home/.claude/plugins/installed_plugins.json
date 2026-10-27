@@ -1,0 +1,5 @@
+{"version": 2, "plugins": {
+  "mattpocock-skills@mattpocock": [{"scope": "user", "installPath": "@HOME@/.claude/plugins/cache/mattpocock/mattpocock-skills/1.0.0"}],
+  "impeccable@impeccable": [{"scope": "user", "installPath": "@HOME@/.claude/plugins/cache/impeccable/impeccable/4.8.0"}],
+  "humanizer@humanizer": [{"scope": "user", "installPath": "@HOME@/.claude/plugins/cache/humanizer/humanizer/1.0.0"}]
+}}
