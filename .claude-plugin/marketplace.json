@@ -1,0 +1,15 @@
+{
+  "name": "factory",
+  "owner": {
+    "name": "Ben Booth",
+    "url": "https://github.com/benbooth493"
+  },
+  "description": "Ben Booth's Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "factory",
+      "source": "./",
+      "description": "Drain a GitHub Project board through Build, QA and Review lanes into merged PRs."
+    }
+  ]
+}

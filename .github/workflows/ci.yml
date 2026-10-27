@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Tools
+        run: |
+          command -v jq || { sudo apt-get install -y jq || brew install jq; }
+          python -m pip install --quiet shellcheck-py
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh tests/*.sh tests/fakebin/gh
+      - name: Validate JSON
+        run: for f in .claude-plugin/*.json hooks/hooks.json examples/*.json; do jq empty "$f"; done
+      - name: Guard hooks
+        run: python -m unittest discover -s tests -v
+      - name: board.sh
+        run: bash tests/test_board.sh
+      - name: merge gate
+        run: |
+          git config --global init.defaultBranch main
+          bash tests/test_merge_gate.sh
