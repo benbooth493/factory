@@ -3,6 +3,9 @@
   "project_number": 1,
   "repo": "benbooth493/my-app",
   "base_branch": "main",
+  "protected_branches": [
+    "release"
+  ],
   "status_field": "Status",
   "columns": {
     "backlog": "Backlog",
@@ -20,10 +23,68 @@
   "max_bounces": 2,
   "merge_method": "squash",
   "auto_merge": true,
-  "models": {
-    "build": "sonnet",
-    "qa": "sonnet",
-    "review": "opus"
+  "merge_policy": {
+    "auto": {
+      "bug": true,
+      "refactor": true,
+      "feature": false,
+      "default": true
+    },
+    "require_labels": [],
+    "block_labels": [
+      "do-not-merge"
+    ],
+    "max_files": 40,
+    "max_lines": 800
+  },
+  "migrations": {
+    "detect": [
+      "supabase/migrations/**",
+      "db/migrate/**",
+      "migrations/**"
+    ],
+    "allowed": false,
+    "command": "supabase db push"
+  },
+  "routing": {
+    "claude": {
+      "default": {
+        "router": "haiku",
+        "easy": "sonnet",
+        "medium": "opus",
+        "hard": "inherit"
+      }
+    },
+    "codex": {
+      "default": {
+        "router": "gpt-6-luna",
+        "easy": "gpt-6.1-sol",
+        "medium": "gpt-6.1-sol",
+        "hard": "gpt-6-astra"
+      }
+    }
+  },
+  "codex": {
+    "model": "",
+    "timeout_minutes": 60
+  },
+  "ui": {
+    "base_url": "http://localhost:3000",
+    "start_command": "npm run dev -- --port $PORT",
+    "ready_path": "/",
+    "check_commands": [
+      "npm run typecheck",
+      "npm run lint"
+    ],
+    "taste_file": ".claude/factory/taste.md",
+    "refine_rounds": 3
+  },
+  "lint": {
+    "max_criteria": 8,
+    "extra_vague_words": []
+  },
+  "calibration": {
+    "allow": []
   },
   "jev": {
     "enabled": true,
@@ -75,6 +136,27 @@
         "surveys",
         "pageview_paths"
       ]
+    },
+    "github": {
+      "enabled": true,
+      "limit": 200,
+      "skip_labels": [
+        "wontfix",
+        "question",
+        "duplicate",
+        "invalid"
+      ]
+    },
+    "prs": {
+      "enabled": true,
+      "limit": 30,
+      "max_comments": 40,
+      "body_chars": 1500,
+      "min_prs": 2
+    },
+    "architecture": {
+      "enabled": false,
+      "max_findings": 5
     }
   }
 }

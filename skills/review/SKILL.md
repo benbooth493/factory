@@ -67,11 +67,18 @@ bounce a card on their own.
    - Exit 0: the PR is merged (or left for a human if `auto_merge` is false).
      `$B move <n> done` only if it actually merged (`gh pr view <pr> --json state`
      shows MERGED); otherwise leave it in Review with a comment. `$B release <n>`.
-   - Exit 4: the Jev risk veto (live mode) held the merge: everything is
-     green but the change looks sensitive. The gate has labelled the PR
-     `factory:needs-human`. Comment on the issue that it is waiting for a
-     human merge, leave the card in Review, `$B release <n>`, and finish
-     with `RESULT: review #<n> waiting reason="held for human"`.
+   - Exit 4: held for a human. The merge policy (card kind, labels, size),
+     a migration that isn't allowed, or the Jev risk veto stopped it; the
+     gate printed `merge-gate: hold: <reason>` lines, labelled the PR
+     `factory:needs-human` and commented the reasons on it. Add the same
+     label to the issue (`gh issue edit <n> --add-label factory:needs-human`)
+     so later waves skip it, comment on the issue that it is waiting for a
+     human merge, leave the card in Review, `$B release <n>`, and finish with
+     `RESULT: review #<n> waiting reason="held for human: <first reason>"`.
+   - Exit 5: the PR merged but the migration command failed. The gate has
+     posted a 🚨 comment on the PR. `$B move <n> blocked`, comment on the
+     issue linking that PR comment, `$B release <n>`, and finish with
+     `RESULT: review #<n> blocked reason="migration failed after merge"`.
    - Other non-zero: the gate's message says why. If the head moved or checks are
      pending, leave the card in Review, comment, release (the next wave
      retries). If verify failed or there are conflicts, treat it as a
