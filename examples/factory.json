@@ -1,0 +1,26 @@
+{
+  "owner": "benbooth493",
+  "project_number": 1,
+  "repo": "benbooth493/my-app",
+  "base_branch": "main",
+  "status_field": "Status",
+  "columns": {
+    "backlog": "Backlog",
+    "ready": "Ready",
+    "build": "Build",
+    "qa": "QA",
+    "review": "Review",
+    "done": "Done",
+    "blocked": "Blocked"
+  },
+  "verify_commands": ["make test"],
+  "max_parallel": 3,
+  "max_bounces": 2,
+  "merge_method": "squash",
+  "auto_merge": true,
+  "models": {
+    "build": "sonnet",
+    "qa": "sonnet",
+    "review": "opus"
+  }
+}

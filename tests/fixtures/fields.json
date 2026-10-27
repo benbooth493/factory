@@ -1,0 +1,15 @@
+{
+  "fields": [
+    {"id": "PVTF_title", "name": "Title", "type": "ProjectV2Field"},
+    {"id": "PVTSSF_status", "name": "Status", "type": "ProjectV2SingleSelectField", "options": [
+      {"id": "o_backlog", "name": "Backlog"},
+      {"id": "o_ready", "name": "Ready"},
+      {"id": "o_build", "name": "Build"},
+      {"id": "o_qa", "name": "QA"},
+      {"id": "o_review", "name": "Review"},
+      {"id": "o_blocked", "name": "Blocked"},
+      {"id": "o_done", "name": "Done"}
+    ]}
+  ],
+  "totalCount": 2
+}

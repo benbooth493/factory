@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Fake gh for tests: answers from fixtures and logs every call to $GH_LOG.
+set -euo pipefail
+fx="$(cd "$(dirname "$0")/../fixtures" && pwd)"
+echo "gh $*" >> "${GH_LOG:-/dev/null}"
+case "$1 ${2:-}" in
+  "project item-list") cat "$fx/items.json" ;;
+  "project field-list") cat "$fx/fields.json" ;;
+  "project view") echo "PVT_project" ;;
+  "project item-edit") echo '{}' ;;
+  "api rate_limit") echo 4000 ;;
+  "issue view")
+    # labels come from FAKE_LABELS (JSON array), default none
+    echo "${FAKE_LABELS:-[]}" ;;
+  "issue edit"|"issue comment"|"label create") : ;;
+  "pr view")
+    jq -n --arg h "${FAKE_HEAD:?}" --arg m "${FAKE_MERGEABLE:-MERGEABLE}" --arg c "${FAKE_CHECK:-SUCCESS}" \
+      '{headRefOid:$h, headRefName:"factory/3", baseRefName:"main", mergeable:$m, isDraft:true,
+        state:"OPEN", statusCheckRollup:[{conclusion:$c}]}' ;;
+  "pr ready"|"pr merge") : ;;
+  "auth status") echo "  - Token scopes: 'project', 'repo'" ;;
+  "repo view") echo '{}' ;;
+  *) echo "fake gh: unhandled: $*" >&2; exit 1 ;;
+esac
