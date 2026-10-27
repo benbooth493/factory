@@ -1,8 +1,8 @@
 {
   "name": "factory",
   "displayName": "Factory",
-  "version": "0.1.0",
-  "description": "Drain a GitHub Project board with Claude Code: cards in Ready go through Build, QA and Review lanes and come out as merged PRs.",
+  "version": "0.2.0",
+  "description": "Drain a GitHub Project board with Claude Code: cards in Ready go through Build, QA and Review lanes and come out as merged PRs. Collects problems from Sentry and PostHog into Backlog.",
   "author": {
     "name": "Ben Booth",
     "url": "https://github.com/benbooth493"
@@ -10,5 +10,5 @@
   "homepage": "https://github.com/benbooth493/factory",
   "repository": "https://github.com/benbooth493/factory",
   "license": "MIT",
-  "keywords": ["github-projects", "kanban", "agents", "automation", "pull-requests"]
+  "keywords": ["github-projects", "kanban", "agents", "automation", "pull-requests", "sentry", "posthog"]
 }

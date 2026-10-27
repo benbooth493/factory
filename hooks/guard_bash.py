@@ -40,6 +40,7 @@ SECRET_PATTERNS = [
     r"(^|/)credentials\.json$",
     r"(^|/)service-account[\w.-]*\.json$",
     r"(^|/)terraform\.tfvars$",
+    r"(^|/)\.sentryclirc$",
 ]
 SAFE_SECRET_SUFFIXES = (".example", ".sample", ".template", ".dist")
 READERS = {
@@ -187,7 +188,7 @@ def check_secrets(words: List[str], root: str, here: str) -> Optional[str]:
         candidate = candidate.lstrip("<@")
         if candidate and is_secret(candidate):
             return (f"{prog} on {candidate} blocked: it looks like a secrets file. "
-                    "List variable names with `grep -o '^[A-Z_]*=' FILE | tr -d =` if you need them")
+                    "To see which variables exist (names only), run the factory scripts/env-names.sh")
     return None
 
 

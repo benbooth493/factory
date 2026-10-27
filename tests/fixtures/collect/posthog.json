@@ -1,0 +1,49 @@
+{
+  "$exception": {
+    "columns": ["key", "type", "message", "events", "users", "first_seen", "last_seen", "url"],
+    "results": [
+      ["019a-issue-1", "TypeError", "price is null", 310, 44, "2026-10-14T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/checkout"],
+      ["019a-issue-2", "ChunkLoadError", "Loading chunk 7 failed", 25, 1, "2026-10-20T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/"]
+    ]
+  },
+  "$rageclick": {
+    "columns": ["path", "element", "events", "users", "first_seen", "last_seen", "url"],
+    "results": [
+      ["/pricing", "button.btn-primary:text=\"Start trial\"", 96, 31, "2026-10-14T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/pricing?email=jo%40example.com#plans"],
+      ["/lonely", "a.link", 50, 1, "2026-10-14T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/lonely"]
+    ]
+  },
+  "$dead_click": {
+    "columns": ["path", "element", "events", "users", "first_seen", "last_seen", "url"],
+    "results": [
+      ["/settings", "div.card:text=\"Billing\"", 40, 12, "2026-10-14T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/settings"]
+    ]
+  },
+  "$web_vitals": {
+    "columns": ["path", "lcp_p75", "events", "users", "first_seen", "last_seen", "url"],
+    "results": [
+      ["/dashboard", 4120, 800, 210, "2026-10-14T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/dashboard"]
+    ]
+  },
+  "checkout_failed": {
+    "columns": ["event", "path", "events", "users", "first_seen", "last_seen", "url"],
+    "results": [
+      ["checkout_failed", "/checkout", 58, 40, "2026-10-14T10:00:00Z", "2026-10-26T18:00:00Z", "https://app.acme.dev/checkout"]
+    ]
+  },
+  "survey sent": {
+    "columns": ["survey", "response", "timestamp"],
+    "results": [
+      ["NPS", "Export to CSV is broken for me", "2026-10-25T10:00:00Z"],
+      ["NPS", "csv export never finishes", "2026-10-24T10:00:00Z"]
+    ]
+  },
+  "$pageview": {
+    "columns": ["path", "views"],
+    "results": [["/", 9000], ["/pricing", 2100], ["/dashboard", 1800]]
+  },
+  "INTERVAL 1 DAY": {
+    "columns": ["n"],
+    "results": [[1234]]
+  }
+}

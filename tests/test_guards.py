@@ -97,6 +97,12 @@ class BashGuardTest(unittest.TestCase):
                     "grep KEY .env", "cat < .env"):
             self.assertBlocked(cmd)
 
+    def test_env_names_helper_allowed(self):
+        self.assertAllowed("bash scripts/env-names.sh")
+        self.assertAllowed("/plugins/factory/scripts/env-names.sh .env")
+        self.assertAllowed("python3 scripts/collect.py fetch sentry --since 14d")
+        self.assertBlocked("cat .sentryclirc")
+
     def test_safe_reads_allowed(self):
         for cmd in ("cat .env.example", "cat README.md", "ls -la", "grep -r TODO src",
                     "echo $HOME", "python3 -m pytest"):

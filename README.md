@@ -40,12 +40,49 @@ Needs `gh` (signed in with the `project` scope: `gh auth refresh -s project`),
 /factory:board run --once  # one wave, then stop
 /factory:board status      # read-only snapshot
 /factory:board stop        # release claims and leave a note on each card
+/factory:collect           # find problems in Sentry + PostHog, file Backlog cards
 ```
 
 Your board's Status field needs these columns: **Backlog, Ready, Build, QA,
 Review, Blocked, Done** (names can be remapped in config). Cards need
 checkable acceptance criteria; ones without are sent back to Backlog with a
 comment instead of being built on a guess.
+
+## Collect: Sentry and PostHog → Backlog
+
+```
+/factory:collect                      # every enabled source, last 14 days, dry run first
+/factory:collect sentry --since 30d   # one source, custom window
+/factory:collect posthog --since 2026-09-01 --yes
+```
+
+| Source | What it looks for |
+|---|---|
+| Sentry | unresolved issues seen in the window, above `min_events` / `min_users`, with the top in-app stack frames |
+| PostHog | `$exception` groups, rage clicks, dead clicks, slow pages (LCP p75 over budget), your own failure events, recurring survey complaints, and routes in the code that never send a pageview (tracking gaps) |
+
+Each candidate is deduped against cards already filed (by a fingerprint in
+the issue body), then checked by its own fresh verifier subagent that reads
+the code and returns *real*, *already fixed*, *duplicate*, *noise* or
+*unclear*. Real ones are filed; unclear ones are filed with `needs-triage`;
+the rest are listed with the reason. A problem whose card was closed but has
+been seen again is **reopened** as a regression rather than filed twice.
+
+Cards land in **Backlog** with evidence, likely cause, repro steps and
+acceptance criteria, labelled `factory:collected`, `source:*`, `kind:*`.
+Moving one to Ready is how it gets built.
+
+Tokens come from the environment or your repo's `.env` (read by the script,
+never by the agent):
+
+| Variable | Scopes |
+|---|---|
+| `SENTRY_AUTH_TOKEN` | `event:read`, `project:read` |
+| `POSTHOG_PERSONAL_API_KEY` | `query:read` |
+
+A source that can't be reached is reported as **unavailable** with the
+reason, never as "nothing found". Collect is read-only towards Sentry and
+PostHog, and strips query strings and user identifiers from what it files.
 
 ## Config
 
@@ -66,7 +103,8 @@ comment instead of being built on a guess.
 }
 ```
 
-Set `auto_merge: false` to have the gate stop at "all green" and leave the
+Add a `collect` block for Sentry and PostHog (`onboard` detects both and
+tests the connection). Set `auto_merge: false` to have the gate stop at "all green" and leave the
 merge button to you. Full example in [`examples/factory.json`](examples/factory.json).
 
 ## Safety
@@ -96,10 +134,11 @@ crashed session.
 
 This is a deliberately small reimplementation of the idea in
 [EricTechPro/super-board](https://github.com/EricTechPro/super-board) —
-go there if you want the full kit (problem collection from Sentry/PostHog,
-UI refinement loops, visual reports, Codex support, model routing ladders).
-factory keeps only the core loop: four skills, three scripts, two hooks,
-lanes run as in-session subagents, no headless dispatcher. No code was copied.
+go there if you want the full kit (GitHub-issue and PR-pattern collection,
+architecture scans, UI refinement loops, visual reports, Codex support, model
+routing ladders). factory keeps the core loop plus Sentry/PostHog collection:
+five skills, a handful of scripts, two hooks, lanes run as in-session
+subagents, no headless dispatcher. No code was copied.
 
 ## Layout
 
@@ -109,9 +148,12 @@ skills/board/     orchestrator: onboard, doctor, status, run, stop
 skills/build/     Build lane
 skills/qa/        QA lane
 skills/review/    Review lane
-scripts/          board.sh (gh project wrapper), worktree.sh, merge-gate.sh
+skills/collect/   Sentry + PostHog → verified Backlog cards
+scripts/          board.sh (gh project wrapper), worktree.sh, merge-gate.sh,
+                  collect.py (fetch, dedupe, render, file), env-names.sh
 hooks/            guard_bash.py, guard_files.py, hooks.json
-tests/            hook unit tests; board and gate tests against a fake gh
+tests/            hook and collector unit tests (recorded Sentry/PostHog payloads);
+                  board and gate tests against a fake gh
 ```
 
 ## Develop
@@ -129,6 +171,9 @@ shellcheck scripts/*.sh
   each other's claims as stale.
 - QA is only as good as what can be run headlessly in your repo. UI
   evidence needs Playwright in the project.
+- The Sentry and PostHog queries are tested against recorded payloads, not
+  yet against live accounts. PostHog exception grouping depends on SDK
+  version; if your exceptions come out ungrouped, tell us.
 - Draft issues and PR cards on the board are ignored; only issues from the
   configured repo are worked.
 
