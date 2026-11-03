@@ -1,7 +1,7 @@
 {
   "name": "factory",
   "displayName": "Factory",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Drain a GitHub Project board with Claude Code or Codex: cards in Ready go through Build, QA and Review lanes and come out as merged PRs. Collects problems from Sentry, PostHog, GitHub and merged PRs into Backlog; UI refine loop, visual pages, git-sync, optional Jev decisions.",
   "author": {
     "name": "Ben Booth",
