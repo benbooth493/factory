@@ -140,7 +140,9 @@ deletes a column.
 
 ### `stop`
 
-Stop dispatching new work. For every card carrying `factory:wip`: post a
+Stop dispatching new work. If a wave workflow is running, stop it first
+(`x` on the run in `/workflows`, or TaskStop); lanes already mid-step stop
+at their next tool call. Then, for every card carrying `factory:wip`: post a
 comment `⏸ factory stopped mid-flight in <lane>; resume with /factory:board run`
 and `board.sh release <n>`. Leave cards in their current column; the next
 run picks them up from there. Do not delete branches or worktrees.
@@ -183,25 +185,49 @@ run picks them up from there. Do not delete branches or worktrees.
    router subagent on the model `route.py router --tier <tier> --host <host> [--pin <pin>]`
    prints, using the prompt in router.md. Skip grading when that prints `none`.
 5. **Dispatch.** For each card, `board.sh claim <n>` (skip the card if the
-   claim fails), then launch one subagent per card, all in a single message
-   so they run in parallel. Prompt each one with:
+   claim fails). Get each lane's model with
+   `route.py model --lane <lane> --grade <grade> --tier <tier> --host <host> [--pin <pin>]`
+   for every lane the card can still reach (an entering-at-Ready card needs
+   build, qa and review). Cards entering past Ready use the `Grade:` from
+   their Build hand-off comment, else `medium`.
+
+   With host `claude` and a Workflow tool, launch the wave as one workflow so
+   it shows in `/workflows` with a Build, QA and Review phase per card:
+   `Workflow` with `scriptPath: ${CLAUDE_PLUGIN_ROOT}/workflows/board-wave.js`
+   and `args` as a JSON object (not a string):
+
+   ```json
+   {"repo": "<owner/name>", "pluginRoot": "${CLAUDE_PLUGIN_ROOT}",
+    "cards": [{"number": 18, "title": "...", "lane": "build", "grade": "hard",
+               "models": {"build": "inherit", "qa": "inherit", "review": "inherit"}}]}
+   ```
+
+   `lane` is the card's entry lane (`build` for Ready and bounced cards). Each
+   card runs its lanes in order and keeps going while a lane hands it on
+   (build → qa → review); a later lane claims the card itself, because the
+   lane before released it. A bounce, hold, block or failure ends that card's
+   chain for this wave. The workflow runs in the background; wait for its
+   completion notice, then reconcile from its `cards` result.
+
+   Without a Workflow tool, launch one subagent per card instead, all in a
+   single message so they run in parallel, each on its entry lane only.
+   Prompt each one with:
 
    > You are the factory **<lane>** lane for issue #<n> in <repo>.
    > Read `${CLAUDE_PLUGIN_ROOT}/skills/<lane>/SKILL.md` and follow it
    > exactly. Config is `.claude/factory.json`. Finish by printing the
    > single final line the skill asks for.
 
-   Get the model with `route.py model --lane <lane> --grade <grade> --tier <tier> --host <host> [--pin <pin>]`;
-   `inherit` means launch the subagent without a model. Cards entering past
-   Ready use the `Grade:` from their Build hand-off comment, else `medium`.
+   `inherit` means launch the subagent without a model.
 
-   With host `codex`, do not launch subagents: run
+   With host `codex`, do not launch subagents or a workflow: run
    `bash ${CLAUDE_PLUGIN_ROOT}/scripts/codex-lane.sh <lane> <n> --model <model>`
    for each card, in parallel as background commands, and read its stdout as
    the RESULT line. Exit 3 (no RESULT) or 124 (timeout) is a lane that died:
    handle it as in step 6.
 6. **Reconcile.** When the wave finishes, read each lane's final line
-   (`RESULT: <lane> #<n> <outcome> ...`). Make sure the card actually moved
+   (`RESULT: <lane> #<n> <outcome> ...`; a workflow wave returns it per card
+   as `result`, with every lane it ran in `lanes`). Make sure the card actually moved
    and `factory:wip` was released; if a lane died without doing so, release
    the claim, comment what happened, and leave the card where it is so the
    next wave retries it. A card that fails the same lane twice in one run
@@ -217,7 +243,8 @@ run picks them up from there. Do not delete branches or worktrees.
    silently unless configured.
 
 Keep the user's view quiet while running: one line per wave
-(`wave 3: review #12, qa #15, build #18 (hard → session)`) and the final report. Detailed
+(`wave 3: review #12, qa #15, build #18 (hard → session)`) and the final report.
+A workflow wave's live progress is in `/workflows`; don't repeat it in chat. Detailed
 evidence belongs in issue and PR comments, not the chat.
 
 ## Rules
