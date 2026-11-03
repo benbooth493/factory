@@ -286,8 +286,11 @@ that remain:
   data stripped from collected cards.
 - **super-board only:** the legacy headless `claude -p` dispatcher and
   live-model evals.
-- **Different:** lanes run as in-session subagents (or `codex exec`), not a
-  workflow runtime; claims use a label, not the assignee.
+- **Different:** a wave is one workflow (`workflows/board-wave.js`) that
+  chains each card's lanes, with plain subagents where no Workflow tool
+  exists (or `codex exec`); the orchestrator lints and grades cards before
+  it launches, so the wave has no pre-flight or classify phase; claims use a
+  label, not the assignee.
 
 No code was copied; super-board's MIT-licensed source was read for
 behaviour.
