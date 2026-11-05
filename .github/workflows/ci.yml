@@ -47,6 +47,8 @@ jobs:
         run: bash tests/test_codex_lane.sh
       - name: ui scripts
         run: bash tests/test_shoot_refine.sh
+      - name: evidence
+        run: bash tests/test_evidence.sh
       - name: README skills table is current
         run: python scripts/readme-sync.py --check
       - name: Docs site builds
