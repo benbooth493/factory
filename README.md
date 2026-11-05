@@ -162,8 +162,9 @@ PostHog, and strips query strings and user identifiers from what it files.
 ## UI: screenshots and the refine loop
 
 For any card that touches UI, QA starts the app (`ui.start_command`), takes
-full-page shots at 1920×1080, 1024×768 and 375×667, commits them to the PR
-branch and embeds them in its comment, on pass and on fail.
+full-page shots at 1920×1080, 1024×768 and 375×667, pushes them to an
+orphan `factory-evidence` branch (never the PR branch, so they don't land in
+your base branch) and embeds them in its comment, on pass and on fail.
 
 `/factory:ui-refine-loop <route|component>` is separate from the board: it
 asks you a few questions once to write a taste file, then runs bounded
@@ -309,7 +310,7 @@ scripts/               board.sh, worktree.sh, merge-gate.sh, board-migrate.sh,
                        lint-cards.py, route.py, codex-lane.sh, collect.py, jev.py,
                        skills-ready.py, check-writing.py, git-sync.sh, shoot.mjs,
                        serve-check.sh, visual.py, skill-map.py, build-site.py,
-                       readme-sync.py, env-names.sh
+                       readme-sync.py, env-names.sh, evidence.sh
 hooks/                 guards, worktree cleanup, hooks.json
 docs/                  writing-standard.md, hosts.md
 site/                  docs site template (built by scripts/build-site.py → _site/)

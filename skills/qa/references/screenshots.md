@@ -1,11 +1,13 @@
 # Screenshots as QA evidence
 
 Any card whose change shows up in a browser gets screenshots, on **pass and
-on fail**. They are committed to the PR branch and shown inline in the QA
-comment, so a reviewer sees the result without checking anything out.
+on fail**. They are pushed to the repo's `factory-evidence` branch, never
+the PR branch, and shown inline in the QA comment, so a reviewer sees the
+result without checking anything out.
 
 Tools: `S=${CLAUDE_PLUGIN_ROOT}/scripts/shoot.mjs`,
-`C=${CLAUDE_PLUGIN_ROOT}/scripts/serve-check.sh`.
+`C=${CLAUDE_PLUGIN_ROOT}/scripts/serve-check.sh`,
+`E=${CLAUDE_PLUGIN_ROOT}/scripts/evidence.sh`.
 
 ## Does this card touch UI?
 
@@ -63,43 +65,41 @@ evidence of anything except a broken setup.
 On a fail, these shots show the broken state. That is the point: Build sees
 what you saw.
 
-## 4. Commit the shots before you comment
+## 4. Push the shots before you comment
 
-Images in a comment only render once the file is on GitHub, so the commit
-and push come first.
+Images in a comment only render once the file is on GitHub, so the push
+comes first.
 
 ```bash
-dir=docs/factory/runs/<issue>/qa-<short sha>     # <sha> = the commit you tested
-git checkout -B <headRefName> <sha>              # you were detached at <sha>
-mkdir -p "$dir" && mv .factory-shots/*.png "$dir"/ && rm -rf .factory-shots
-git add "$dir" && git commit -m "QA evidence for #<issue> at <short sha>"
-git push origin <headRefName>                    # plain push, never --force
-shot_sha=$(git rev-parse HEAD)
+bash $E push <issue> <sha> .factory-shots && rm -rf .factory-shots   # <sha> = the commit you tested
 ```
 
-- If the push is rejected, the branch moved under you: the code you tested
-  is no longer the head. Stop, discard your commit, and report that instead
-  of a verdict.
-- The evidence commit adds files under `docs/factory/runs/` only. The
-  verdict is still about `<sha>`, and you say so in the report. Review
-  approves the new head, after checking it differs from `<sha>` only there.
+It commits the shots to `runs/<issue>/qa-<short sha>/` on the orphan
+branch `factory-evidence` (created on first use) and prints
+`{"sha", "dir", "url"}`. It never checks anything out or touches the PR
+branch, so the PR head stays the commit you tested. If another QA lane
+pushed first, it fetches the new tip, rebuilds its commit on top and
+retries, never `--force`; after five rejected tries it exits 1, and you
+report that instead of a verdict.
+
+- Never commit shots to the PR branch.
 - Images over 5 MB render badly. Use crops (`--select`) or a narrower page
-  rather than committing huge files.
+  rather than pushing huge files.
 
 ## 5. Embed them
 
-Link each image with the **blob URL pinned to `shot_sha`**, plus `?raw=true`.
-That works for private repos (the viewer's own GitHub session fetches it)
-and keeps working after the branch is deleted on merge. Never link a branch
-name, and never upload shots to an outside image host.
+Link each image as `<url>/<file>?raw=true`, with `url` from the JSON. It is
+the blob URL pinned to the evidence commit, which works for private repos
+(the viewer's own GitHub session fetches it) and keeps working after the PR
+merges and its branch is deleted. Never link a branch name, and never upload
+shots to an outside image host.
 
 ```
-https://github.com/<owner>/<repo>/blob/<shot_sha>/docs/factory/runs/<issue>/qa-<short sha>/<file>.png?raw=true
+https://github.com/<owner>/<repo>/blob/<evidence sha>/runs/<issue>/qa-<short sha>/<file>.png?raw=true
 ```
 
-`<owner>/<repo>` is `repo` from the config. Put this block in the QA
-report, after the criteria lines, in both the PR comment and the issue
-comment:
+Put this block in the QA report, after the criteria lines, in both the PR
+comment and the issue comment:
 
 ```markdown
 Screenshots (`<route>` at <short sha>):
@@ -117,6 +117,6 @@ one line under the table saying what in the shot is wrong.
 
 - [ ] UI decision stated (shots, or "not applicable" with the reason)
 - [ ] every UI criterion has a shot that shows it
-- [ ] shots committed and pushed **before** the comment
+- [ ] shots pushed with `evidence.sh` **before** the comment; PR branch untouched
 - [ ] links pinned to the evidence commit SHA, `?raw=true`
 - [ ] same block on the PR comment and the issue comment
