@@ -45,7 +45,7 @@ command -v codex >/dev/null 2>&1 || die "codex CLI not found on PATH (npm i -g @
 plugin_root="$(cd "$(dirname "$0")/.." && pwd)"
 # The main checkout, even when called from inside a card worktree.
 common="$(git rev-parse --git-common-dir 2>/dev/null)" || die "run inside the target git repository"
-root="$(cd "$common/.." && pwd)"
+root="$(cd "$common/.." && pwd -P)"
 config="${FACTORY_CONFIG:-$root/.claude/factory.json}"
 
 cfg() { # cfg <jq-path> <default>
@@ -60,7 +60,7 @@ if [ -z "$timeout" ]; then
   timeout=$(( $(cfg .codex.timeout_minutes 60) * 60 ))
 fi
 case "$timeout" in ''|*[!0-9]*|0) die "timeout must be a positive number of seconds: $timeout" ;; esac
-git_dir="$(cd "$common" && pwd)"
+git_dir="$(cd "$common" && pwd -P)"
 
 logdir="$root/.claude/factory/codex"
 mkdir -p "$logdir"
