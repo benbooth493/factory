@@ -27,12 +27,10 @@ bounce a card on their own.
 ## Steps
 
 1. **Pin the commit.** `gh pr view <pr> --json headRefOid,files,additions,deletions`.
-   Record the head SHA. If it differs from the SHA in the latest QA PASS
-   comment, check what changed: `git diff --name-only <qa sha> <head>`. If
-   the only changes are QA's own evidence files under `docs/factory/runs/`,
-   review and approve the head. Anything else means the code changed after
-   QA: move the card back to QA (`$B move <n> qa`, release, comment why) and
-   stop.
+   Record the head SHA. It must equal the SHA in the latest QA PASS comment
+   (QA's screenshots live on the `factory-evidence` branch, not the PR). If
+   it differs, the code changed after QA: move the card back to QA
+   (`$B move <n> qa`, release, comment why) and stop.
 2. **Read the diff cold.** `gh pr diff <pr>`. Write down, privately, your
    hypotheses about what could be wrong before looking at comments.
 3. **Check against the issue.** Every acceptance criterion addressed; nothing

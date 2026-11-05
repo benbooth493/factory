@@ -34,8 +34,9 @@ write it (you don't write product code or tests on the branch), and
    exercise the CLI or API with real input, start the app and hit the
    endpoint, or, for any card that touches UI, take screenshots as
    `${CLAUDE_PLUGIN_ROOT}/skills/qa/references/screenshots.md` describes
-   (three viewports, committed to the PR branch before you comment, embedded
-   inline on pass and on fail). A criterion with only "the code looks right" as evidence is
+   (three viewports, pushed to the `factory-evidence` branch before you
+   comment, embedded inline on pass and on fail; never committed to the PR
+   branch). A criterion with only "the code looks right" as evidence is
    not met.
 5. **Look for the gaps.** Edge cases the criteria imply (empty input, error
    paths, permissions), and whether the tests would fail if the feature
