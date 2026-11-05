@@ -4,7 +4,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 refine="$here/../skills/ui-refine-loop/refine.sh"
-tmp=$(mktemp -d)
+tmp=$(cd "$(mktemp -d)" && pwd -P)   # physical path: git reports /private/var, not /var, on macOS
 trap 'rm -rf "$tmp"' EXIT
 
 pass=0; fail=0
