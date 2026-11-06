@@ -18,7 +18,7 @@ Every host also needs `gh` (with the `project` scope), `jq`, `git`, bash
 
 1. `FACTORY_HOST=claude|codex` wins (tests, or a host it misreads).
 2. `CODEX_THREAD_ID` or `CODEX_SESSION_ID` set → `codex`. Codex sets these in
-   every shell it runs (super-board recorded them on codex-cli 0.160.0).
+   every shell it runs (seen on codex-cli 0.160.0).
 3. Otherwise `claude`.
 
 `run --codex` sets the host to `codex` regardless.
@@ -40,7 +40,7 @@ Override any cell in config:
 ```
 
 The Codex model names (`gpt-6-luna`, `gpt-6.1-sol`, `gpt-6-astra`) are
-taken from super-board's ladder. factory has not called them.
+unconfirmed: factory has not called them.
 
 ## Codex lanes from Claude (`--codex`)
 
@@ -78,7 +78,7 @@ red checks; but force-push and `.env` reads are only refused by the prompt.
 | Piece | Status |
 |---|---|
 | Prompt content, model flag, timeout, RESULT extraction, exit codes | tested with `tests/fakebin_route/codex` (`tests/test_codex_lane.sh`) |
-| `exec`, `-C`, `-m`, `-c approval_policy`, `--output-last-message`, `-` for stdin | match super-board's invocation recorded on codex-cli 0.160.0; not run by factory |
+| `exec`, `-C`, `-m`, `-c approval_policy`, `--output-last-message`, `-` for stdin | match an invocation recorded on codex-cli 0.160.0; not run by factory |
 | `default_permissions` / `permissions.<name>.filesystem` / `network.enabled` profile | same source; not run by factory |
 | A full lane (Build → PR) on real Codex | **untested** |
 

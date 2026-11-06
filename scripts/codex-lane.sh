@@ -18,7 +18,7 @@
 #
 # Sandbox: a named permission profile, read-only everywhere except the repo
 # (worktrees and .git included) and temp dirs, with network on for gh and
-# git push. The Codex flags follow super-board's invocation recorded against
+# git push. The Codex flags follow an invocation recorded against
 # codex-cli 0.160.0; factory has not run them against a real CLI (docs/hosts.md).
 
 set -euo pipefail

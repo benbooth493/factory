@@ -270,32 +270,6 @@ first), and the skills table above regenerates when a skill changes.
 work the same card. `stop` releases them; `run` clears stale ones left by a
 crashed session.
 
-## How it relates to super-board
-
-factory is an independent reimplementation of the idea in
-[EricTechPro/super-board](https://github.com/EricTechPro/super-board), and
-now covers its feature set: the Build/QA/Review loop, collection from
-Sentry, PostHog, GitHub issues, PR patterns and an architecture scan, the UI
-refine loop, visual pages, git-sync, the writing standard, the model router
-with Codex support, merge policies and migrations, card lint, board
-migration, calibration, cleanup hooks and the docs site. The differences
-that remain:
-
-- **factory only:** Jev decisions in shadow mode, a Blocked column with
-  bounce counts and bounce reasons, PR holds that later waves skip,
-  push protection always on, regressions reopen their old card, personal
-  data stripped from collected cards.
-- **super-board only:** the legacy headless `claude -p` dispatcher and
-  live-model evals.
-- **Different:** a wave is one workflow (`workflows/board-wave.js`) that
-  chains each card's lanes, with plain subagents where no Workflow tool
-  exists (or `codex exec`); the orchestrator lints and grades cards before
-  it launches, so the wave has no pre-flight or classify phase; claims use a
-  label, not the assignee.
-
-No code was copied; super-board's MIT-licensed source was read for
-behaviour.
-
 ## Layout
 
 ```
