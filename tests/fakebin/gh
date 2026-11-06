@@ -41,7 +41,28 @@ board_mode() {
 if [ -n "${FAKE_BOARD:-}" ] && board_mode "$@"; then exit 0; fi
 
 case "$1 ${2:-}" in
-  "project item-list") cat "$fx/items.json" ;;
+  "api graphql")
+    # Board reads from board.sh. Items come from FAKE_ITEMS (a JSON file
+    # {nodes:[...]}, default fixtures/items.json), all in one page.
+    # FAKE_RATE_LIMIT makes GitHub refuse like its secondary rate limit.
+    [ -z "${FAKE_RATE_LIMIT:-}" ] || { echo "GraphQL: API rate limit exceeded for user ID 1." >&2; exit 1; }
+    q="" num="" st="" jqf="."
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -f|-F) case "$2" in query=*) q="${2#query=}" ;; number=*) num="${2#number=}" ;; status=*) st="${2#status=}" ;; esac; shift ;;
+        --jq) jqf="$2"; shift ;;
+      esac
+      shift
+    done
+    items="${FAKE_ITEMS:-$fx/items.json}"
+    case "$q" in
+      *projectItems*)
+        jq --argjson n "$num" --arg st "$st" --slurpfile f "$fx/fields.json" '
+          ($f[0].fields[] | select(.name == $st) | {id, options}) as $field
+          | {data: {repository: {issue: {projectItems: {nodes: [ .nodes[] | select(.content.number == $n)
+              | {id, project: {id: "PVT_project", number: 5, url: "https://github.com/users/acme/projects/5", field: $field}} ]}}}}}' "$items" ;;
+      *) jq "{data: {repositoryOwner: {projectV2: {items: {pageInfo: {hasNextPage: false, endCursor: null}, nodes: .nodes}}}}} | $jqf" "$items" ;;
+    esac ;;
   "project field-list") cat "$fx/fields.json" ;;
   "project view") echo "PVT_project" ;;
   "project item-edit") echo '{}' ;;

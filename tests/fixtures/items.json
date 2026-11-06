@@ -1,118 +1,192 @@
 {
-  "items": [
+  "nodes": [
     {
       "id": "PVTI_1",
-      "status": "Ready",
-      "labels": [],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Ready"
+      },
       "content": {
-        "type": "Issue",
         "number": 3,
         "title": "Add login",
-        "url": "https://github.com/acme/app/issues/3"
+        "url": "https://github.com/acme/app/issues/3",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
       }
     },
     {
       "id": "PVTI_2",
-      "status": "Ready",
-      "labels": [
-        "factory:wip"
-      ],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Ready"
+      },
       "content": {
-        "type": "Issue",
         "number": 1,
         "title": "Fix nav",
-        "url": "https://github.com/acme/app/issues/1"
+        "url": "https://github.com/acme/app/issues/1",
+        "state": "OPEN",
+        "labels": {
+          "nodes": [
+            {
+              "name": "factory:wip"
+            }
+          ]
+        }
       }
     },
     {
       "id": "PVTI_3",
-      "status": "Ready",
-      "labels": [],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Ready"
+      },
       "content": {
-        "type": "Issue",
         "number": 2,
         "title": "Dark mode",
-        "url": "https://github.com/acme/app/issues/2"
+        "url": "https://github.com/acme/app/issues/2",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
       }
     },
     {
       "id": "PVTI_4",
-      "status": "QA",
-      "labels": [
-        "factory:wip"
-      ],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "QA"
+      },
       "content": {
-        "type": "Issue",
         "number": 7,
         "title": "Search",
-        "url": "https://github.com/acme/app/issues/7"
+        "url": "https://github.com/acme/app/issues/7",
+        "state": "OPEN",
+        "labels": {
+          "nodes": [
+            {
+              "name": "factory:wip"
+            }
+          ]
+        }
       }
     },
     {
       "id": "PVTI_5",
-      "status": "Done",
-      "labels": [],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Done"
+      },
       "content": {
-        "type": "Issue",
         "number": 9,
         "title": "Old",
-        "url": "https://github.com/acme/app/issues/9"
+        "url": "https://github.com/acme/app/issues/9",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
       }
     },
     {
       "id": "PVTI_6",
-      "status": "Ready",
-      "content": {
-        "type": "DraftIssue",
-        "title": "Draft only"
-      }
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Ready"
+      },
+      "content": {}
     },
     {
       "id": "PVTI_7",
-      "status": "Ready",
-      "labels": [],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Ready"
+      },
       "content": {
-        "type": "Issue",
         "number": 4,
         "title": "Other repo",
-        "url": "https://github.com/acme/other/issues/4"
+        "url": "https://github.com/acme/other/issues/4",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
       }
     },
     {
       "id": "PVTI_8",
-      "status": "Review",
-      "labels": [],
-      "content": {
-        "type": "PullRequest",
-        "number": 11,
-        "title": "A PR",
-        "url": "https://github.com/acme/app/pull/11"
-      }
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Review"
+      },
+      "content": {}
     },
     {
       "id": "PVTI_9",
-      "status": "Review",
-      "labels": [
-        "factory:needs-human"
-      ],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Review"
+      },
       "content": {
-        "type": "Issue",
         "number": 12,
         "title": "Held",
-        "url": "https://github.com/acme/app/issues/12"
+        "url": "https://github.com/acme/app/issues/12",
+        "state": "OPEN",
+        "labels": {
+          "nodes": [
+            {
+              "name": "factory:needs-human"
+            }
+          ]
+        }
       }
     },
     {
       "id": "PVTI_10",
-      "status": "Review",
-      "labels": [],
+      "isArchived": false,
+      "fieldValueByName": {
+        "name": "Review"
+      },
       "content": {
-        "type": "Issue",
         "number": 13,
         "title": "Reviewable",
-        "url": "https://github.com/acme/app/issues/13"
+        "url": "https://github.com/acme/app/issues/13",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
+      }
+    },
+    {
+      "id": "PVTI_11",
+      "isArchived": true,
+      "fieldValueByName": {
+        "name": "Ready"
+      },
+      "content": {
+        "number": 5,
+        "title": "Archived",
+        "url": "https://github.com/acme/app/issues/5",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
+      }
+    },
+    {
+      "id": "PVTI_12",
+      "isArchived": true,
+      "fieldValueByName": {
+        "name": "Review"
+      },
+      "content": {
+        "number": 6,
+        "title": "Archived",
+        "url": "https://github.com/acme/app/issues/6",
+        "state": "OPEN",
+        "labels": {
+          "nodes": []
+        }
       }
     }
-  ],
-  "totalCount": 10
+  ]
 }

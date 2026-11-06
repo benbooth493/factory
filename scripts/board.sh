@@ -8,8 +8,8 @@
 #   doctor                      check gh auth, scopes, config and board columns
 #   status                      card counts per column
 #   items [column]              JSON array of issue cards (optionally one column)
-#   next <column> [n]           up to n unclaimed cards in a column, oldest first
-#                               (skips cards held for a human: factory:needs-human)
+#   next <col>[,<col>...] [n]   up to n unclaimed cards, by column order then oldest
+#                               first, from one board read (skips factory:needs-human)
 #   move <issue> <column-key>   move a card (column-key: ready|build|qa|review|done|blocked|backlog)
 #   claim <issue>               take the factory:wip label; exits 1 if already held
 #   release <issue>             drop the factory:wip label
@@ -19,6 +19,8 @@
 #
 # Config: $FACTORY_CONFIG, default <repo root>/.claude/factory.json
 # Needs: gh (with the `project` scope), jq. Bash 3.2 compatible.
+
+# shellcheck disable=SC2016  # $vars in GraphQL and jq programs are theirs, not the shell's
 
 set -euo pipefail
 
@@ -76,32 +78,64 @@ rate_guard() {
   fi
 }
 
-# --- reads -------------------------------------------------------------------
-
-raw_items() {
-  rate_guard
-  gh project item-list "$(project)" --owner "$(owner)" --format json --limit 500
+# Run gh; on failure name a rate-limit refusal plainly. GitHub's secondary
+# limit doesn't show in `gh api rate_limit`, so rate_guard can't see it coming.
+ghq() {
+  local err rc=0
+  err=$(mktemp "${TMPDIR:-/tmp}/board-gh.XXXXXX")
+  gh "$@" 2>"$err" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if grep -qiE 'rate limit|too quickly' "$err"; then
+      echo "board: GitHub refused with a rate limit: $(head -n1 "$err")" >&2
+      echo "board: this is GitHub's secondary rate limit (gh api rate_limit doesn't show it); wait 15-30 minutes, retrying sooner makes it longer" >&2
+    else
+      cat "$err" >&2
+    fi
+    rm -f "$err"
+    exit "$rc"
+  fi
+  rm -f "$err"
 }
 
-# Normalised card list: issues only, from the configured repo.
+# --- reads -------------------------------------------------------------------
+
+# Paged, and only the fields board.sh uses: item-list fetches every field of
+# every item and trips the secondary rate limit on boards with a few hundred cards.
+ITEMS_QUERY='query($login: String!, $number: Int!, $status: String!, $endCursor: String) {
+  repositoryOwner(login: $login) { ... on ProjectV2Owner { projectV2(number: $number) {
+    items(first: 100, after: $endCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id isArchived
+        fieldValueByName(name: $status) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+        content { ... on Issue { number title url state labels(first: 50) { nodes { name } } } }
+      } } } } } }'
+
+# One JSON node per line.
+raw_items() {
+  rate_guard
+  ghq api graphql --paginate -f query="$ITEMS_QUERY" -f login="$(owner)" \
+    -F number="$(project)" -f status="$(status_field)" \
+    --jq '.data.repositoryOwner.projectV2.items.nodes[]'
+}
+
+# Normalised card list: unarchived issues from the configured repo.
 items_json() {
-  local field_key repo_url
-  # gh exposes a single-select field under its lower-cased name.
-  field_key=$(status_field | tr '[:upper:]' '[:lower:]')
-  repo_url="https://github.com/$(repo)/"
-  raw_items | jq --arg f "$field_key" --arg r "$repo_url" '
-    [ .items[]
-      | select(.content.type == "Issue")
+  local raw
+  raw=$(raw_items) || exit 1
+  jq -s --arg r "https://github.com/$(repo)/" '
+    [ .[]
+      | select(.isArchived | not)
       | select((.content.url // "") | startswith($r))
       | {
           item_id: .id,
           number: .content.number,
           title: .content.title,
           url: .content.url,
-          status: (.[$f] // null),
-          labels: (.labels // []),
-          assignees: (.assignees // [])
-        } ]'
+          state: .content.state,
+          status: (.fieldValueByName.name // null),
+          labels: [.content.labels.nodes[]?.name]
+        } ]' <<<"$raw"
 }
 
 cmd_items() {
@@ -115,15 +149,18 @@ cmd_items() {
 }
 
 cmd_next() {
-  [ $# -ge 1 ] || die "usage: next <column> [n]"
-  local col n
-  col=$(column_name "$1")
+  [ $# -ge 1 ] || die "usage: next <column>[,<column>...] [n]"
+  local cols="[]" key col n
   n="${2:-1}"
-  items_json | jq --arg c "$col" --arg wip "$WIP_LABEL" --arg hold "$HOLD_LABEL" --argjson n "$n" '
-    [ .[] | select(.status == $c)
+  for key in $(printf '%s' "$1" | tr ',' ' '); do
+    col=$(column_name "$key")
+    cols=$(jq -c --arg c "$col" '. + [$c]' <<<"$cols")
+  done
+  items_json | jq --argjson cols "$cols" --arg wip "$WIP_LABEL" --arg hold "$HOLD_LABEL" --argjson n "$n" '
+    [ .[] | select(.status as $s | $cols | index($s))
       | select((.labels | index($wip)) | not)
       | select((.labels | index($hold)) | not) ]
-    | sort_by(.number) | .[:$n]'
+    | sort_by(.status as $s | ($cols | index($s)), .number) | .[:$n]'
 }
 
 cmd_status() {
@@ -140,24 +177,37 @@ cmd_status() {
 
 # --- writes ------------------------------------------------------------------
 
-project_id() {
-  gh project view "$(project)" --owner "$(owner)" --format json --jq .id
-}
+# The card's own project items: finds the item, project and Status options
+# without listing the board.
+CARD_QUERY='query($owner: String!, $name: String!, $number: Int!, $status: String!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) {
+    projectItems(first: 20) { nodes {
+      id
+      project { id number url
+        field(name: $status) { ... on ProjectV2SingleSelectField { id options { id name } } } }
+    } } } } }'
 
 cmd_move() {
   [ $# -eq 2 ] || die "usage: move <issue> <column-key>"
-  local issue="$1" col fields field_id option_id item_id
+  local issue="$1" col r card item_id project_id field_id option_id
   col=$(column_name "$2")
+  r=$(repo)
   rate_guard
-  fields=$(gh project field-list "$(project)" --owner "$(owner)" --format json)
-  field_id=$(jq -r --arg f "$(status_field)" '.fields[] | select(.name == $f) | .id' <<<"$fields")
+  card=$(ghq api graphql -f query="$CARD_QUERY" -f owner="${r%%/*}" -f name="${r#*/}" \
+    -F number="$issue" -f status="$(status_field)")
+  card=$(jq -c --argjson p "$(project)" --arg o "$(owner)" '
+    [ .data.repository.issue.projectItems.nodes[]
+      | select(.project.number == $p)
+      | select(.project.url | ascii_downcase | endswith("/\($o | ascii_downcase)/projects/\($p)")) ]
+    | first // empty' <<<"$card")
+  [ -n "$card" ] || die "issue #$issue is not on the board"
+  item_id=$(jq -r .id <<<"$card")
+  project_id=$(jq -r .project.id <<<"$card")
+  field_id=$(jq -r '.project.field.id // empty' <<<"$card")
   [ -n "$field_id" ] || die "no field named '$(status_field)' on the board"
-  option_id=$(jq -r --arg f "$(status_field)" --arg c "$col" \
-    '.fields[] | select(.name == $f) | .options[] | select(.name == $c) | .id' <<<"$fields")
+  option_id=$(jq -r --arg c "$col" '.project.field.options[] | select(.name == $c) | .id' <<<"$card")
   [ -n "$option_id" ] || die "column '$col' does not exist on the board"
-  item_id=$(items_json | jq -r --argjson n "$issue" '.[] | select(.number == $n) | .item_id')
-  [ -n "$item_id" ] || die "issue #$issue is not on the board"
-  gh project item-edit --id "$item_id" --project-id "$(project_id)" \
+  ghq project item-edit --id "$item_id" --project-id "$project_id" \
     --field-id "$field_id" --single-select-option-id "$option_id" >/dev/null
   echo "#$issue -> $col"
 }

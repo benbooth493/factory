@@ -62,6 +62,33 @@ check "move edits the right item" \
 if "$board" move 99 build >/dev/null 2>&1; then r=0; else r=1; fi
 check "move unknown issue fails" "1" "$r"
 
+check "move never lists the board" "0" "$(grep -c 'repositoryOwner\|item-list' "$GH_LOG" || true)"
+
+# next across several columns: column order first, then oldest first
+check "next takes columns in priority order" "13:Review 2:Ready 3:Ready" \
+  "$("$board" next review,qa,build,ready 3 | jq -r 'map("\(.number):\(.status)") | join(" ")')"
+
+# a 300-item board: a wave plan reads it once, archived cards stay out
+jq -n '{nodes: [range(1; 301) as $i | {
+  id: "PVTI_big\($i)", isArchived: ($i <= 150),
+  fieldValueByName: {name: (if $i % 50 == 0 then "Ready" elif $i % 75 == 1 then "Review" else "Done" end)},
+  content: {number: $i, title: "Card \($i)", url: "https://github.com/acme/app/issues/\($i)", state: "OPEN",
+            labels: {nodes: []}}}]}' > "$tmp/big.json"
+: > "$GH_LOG"
+check "big board plan" "151:Review 226:Review 200:Ready" \
+  "$(FAKE_ITEMS="$tmp/big.json" "$board" next review,qa,build,ready 3 | jq -r 'map("\(.number):\(.status)") | join(" ")')"
+check "big board read once per plan" "1" "$(grep -c '^gh api graphql' "$GH_LOG")"
+check "big board status skips archived" "Ready 3|Review 2|Done 145" \
+  "$(FAKE_ITEMS="$tmp/big.json" "$board" status | awk '$2>0 && $1!="in-flight"{printf "%s%s %s", (n++?"|":""), $1, $2}')"
+
+# a rate-limit refusal fails loudly, never reads as an empty column
+for c in "next ready 3" "status" "move 3 build"; do
+  # shellcheck disable=SC2086
+  if out=$(FAKE_RATE_LIMIT=1 "$board" $c 2>"$tmp/err"); then r=0; else r=1; fi
+  check "rate limit fails: $c" "1 secondary" "$r $(grep -o secondary "$tmp/err" | head -n1)"
+  check "rate limit prints nothing: $c" "" "$out"
+done
+
 # claim is a mutex on the wip label
 : > "$GH_LOG"
 FAKE_LABELS='[]' "$board" claim 3 >/dev/null

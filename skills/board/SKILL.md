@@ -160,13 +160,13 @@ run picks them up from there. Do not delete branches or worktrees.
 2. **Recover.** Any card with `factory:wip` at start-up is a leftover from
    a crashed run (nothing of yours is running yet): release it and comment
    `♻️ released stale claim`.
-3. **Plan a wave.** Read `max_parallel` (default 3). Fill slots in this
-   priority order, because finishing work beats starting work:
-   1. `board.sh next review`
-   2. `board.sh next qa`
-   3. `board.sh next build` (cards a lane bounced back)
-   4. `board.sh next ready`
-   Never put two lanes on the same card.
+3. **Plan a wave.** Read `max_parallel` (default 3) and fill the slots with
+   one call, `board.sh next review,qa,build,ready <max_parallel>`. It reads
+   the board once and returns cards in that priority order (Build holds
+   cards a lane bounced back), because finishing work beats starting work.
+   Each card's `status` says which lane it enters. Don't call `next` per
+   column: every call reads the whole board, and big boards hit GitHub's
+   secondary rate limit. Never put two lanes on the same card.
 4. **Lint Ready cards before building.** `lint-cards.py --json --issue <n>`
    decides whether the card has checkable criteria; any flag sends it to
    Backlog with the flagged lines as the comment (`/factory:board lint` is
