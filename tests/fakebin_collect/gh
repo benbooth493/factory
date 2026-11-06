@@ -18,6 +18,12 @@ case "$1 ${2:-}" in
       '{"id": "PVTI_99", "status": null, "labels": [], "content": {"type": "Issue", "number": 99, "title": "New", "url": "https://github.com/acme/app/issues/99"}}' ;;
   "project field-list") cat "$fx/fields.json" ;;
   "project view") echo "PVT_project" ;;
+  "api graphql")
+    # board.sh move's card lookup: every issue is on project 5
+    n=$(printf '%s\n' "$@" | sed -n 's/^number=//p')
+    jq --argjson n "$n" '{data: {repository: {issue: {projectItems: {nodes: [{id: "PVTI_\($n)",
+      project: {id: "PVT_project", number: 5, url: "https://github.com/users/acme/projects/5",
+        field: (.fields[] | select(.name == "Status") | {id, options})}}]}}}}}' "$fx/fields.json" ;;
   "api rate_limit") echo 4000 ;;
   *) echo "fake gh (collect): unhandled: $*" >&2; exit 1 ;;
 esac
