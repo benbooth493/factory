@@ -78,16 +78,31 @@ case "$1 ${2:-}" in
   "pr view")
     # FAKE_PR_LABELS: label names, FAKE_FILES: [{path,additions,deletions}],
     # FAKE_CLOSES: issue numbers the PR closes (all JSON arrays)
+    # labels added by "pr edit" in this run show up too
+    added='[]'
+    [ ! -f "${GH_LOG:-}.labels" ] || added=$(jq -Rn '[inputs]' "$GH_LOG.labels")
     default_files='[{"path":"b.txt","additions":1,"deletions":0}]'
     jq -n --arg h "${FAKE_HEAD:?}" --arg m "${FAKE_MERGEABLE:-MERGEABLE}" --arg c "${FAKE_CHECK:-SUCCESS}" \
-      --argjson l "${FAKE_PR_LABELS:-[]}" --argjson f "${FAKE_FILES:-$default_files}" \
+      --argjson l "${FAKE_PR_LABELS:-[]}" --argjson a "$added" --argjson f "${FAKE_FILES:-$default_files}" \
       --argjson i "${FAKE_CLOSES:-[]}" \
       '{headRefOid:$h, headRefName:"factory/3", baseRefName:"main", mergeable:$m, isDraft:true,
         state:"OPEN", statusCheckRollup:[{conclusion:$c}],
-        labels:[$l[] | {name:.}], files:$f, changedFiles:($f | length),
+        labels:[($l + $a)[] | {name:.}], files:$f, changedFiles:($f | length),
         additions:([$f[].additions] | add // 0), deletions:([$f[].deletions] | add // 0),
         closingIssuesReferences:[$i[] | {number:.}]}' ;;
-  "pr ready"|"pr merge"|"pr edit") : ;;
+  "pr ready"|"pr merge") : ;;
+  "pr edit")
+    # FAKE_EDIT_FAIL=N fails the first N label edits like a network timeout.
+    # Labels that land are kept in $GH_LOG.labels, which "pr view" reads.
+    [ -n "${GH_LOG:-}" ] || exit 0
+    case " $* " in *" --add-label "*)
+      n=$(cat "$GH_LOG.editfails" 2>/dev/null || echo 0)
+      if [ "$n" -lt "${FAKE_EDIT_FAIL:-0}" ]; then
+        echo $((n + 1)) > "$GH_LOG.editfails"
+        echo "fake gh: dial tcp: i/o timeout" >&2; exit 1
+      fi
+      while [ $# -gt 0 ]; do [ "$1" != "--add-label" ] || echo "$2" >> "$GH_LOG.labels"; shift; done ;;
+    esac ;;
   "pr diff") printf 'diff --git a/db/migrate.sql b/db/migrate.sql\n+ALTER TABLE users DROP COLUMN email;\n' ;;
   "auth status") echo "  - Token scopes: 'project', 'repo'" ;;
   "repo view") echo '{}' ;;

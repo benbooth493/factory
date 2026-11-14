@@ -47,11 +47,26 @@ ncmds=$(jq '.verify_commands | length' "$config")
 case "$method" in squash|merge|rebase) ;; *) die "merge_method must be squash, merge or rebase" 2 ;; esac
 mig_cmd=$(jq -r '.migrations.command // ""' "$config")
 
-# Hold for a human: label, comment with the reasons, mark ready, exit 4.
-hold() { # hold <reasons (one per line)>
+# Label the PR factory:needs-human and read it back. A lost label makes the
+# next wave review the PR again, so retry, then say so loudly.
+label_needs_human() {
+  local try
   gh label create factory:needs-human --repo "$repo" --color b60205 \
     --description "Factory held this for a human decision" >/dev/null 2>&1 || true
-  gh pr edit "$pr" --repo "$repo" --add-label factory:needs-human >/dev/null 2>&1 || true
+  for try in 1 2 3; do
+    gh pr edit "$pr" --repo "$repo" --add-label factory:needs-human >/dev/null 2>&1 || true
+    if gh pr view "$pr" --repo "$repo" --json labels 2>/dev/null \
+       | jq -e 'any(.labels[]?; .name == "factory:needs-human")' >/dev/null; then
+      return 0
+    fi
+    [ "$try" -eq 3 ] || sleep 1
+  done
+  echo "merge-gate: hold label not applied" >&2
+}
+
+# Hold for a human: label, comment with the reasons, mark ready, exit 4.
+hold() { # hold <reasons (one per line)>
+  label_needs_human
   gh pr ready "$pr" --repo "$repo" >/dev/null 2>&1 || true
   printf '🙋 **factory held this PR for a human** at `%s`.\n\n%s\n\nMerge it yourself once you are happy; factory will not merge it.\n' \
     "$head" "$(printf '%s\n' "$1" | sed 's/^/- /')" \
@@ -230,9 +245,7 @@ if (cd "$wt" && bash -c "$mig_cmd") >"$log" 2>&1; then
   exit 0
 fi
 tail -n 20 "$log" >&2
-gh label create factory:needs-human --repo "$repo" --color b60205 \
-  --description "Factory held this for a human decision" >/dev/null 2>&1 || true
-gh pr edit "$pr" --repo "$repo" --add-label factory:needs-human >/dev/null 2>&1 || true
+label_needs_human
 {
   printf '🚨 **MIGRATION FAILED after merge.** `%s` exited non-zero.\n\n' "$mig_cmd"
   printf 'The code is on `%s` but the database may not match it. A human needs to fix and apply:\n\n' "$base"

@@ -70,12 +70,20 @@ bounce a card on their own.
      gate printed `merge-gate: hold: <reason>` lines, labelled the PR
      `factory:needs-human` and commented the reasons on it. Add the same
      label to the issue (`gh issue edit <n> --add-label factory:needs-human`)
-     so later waves skip it, comment on the issue that it is waiting for a
-     human merge, leave the card in Review, `$B release <n>`, and finish with
+     so later waves skip it. Then check the label is on both
+     (`gh pr view <pr> --json labels`, `gh issue view <n> --json labels`) and
+     add whichever is missing; the gate prints
+     `merge-gate: hold label not applied` when its own call failed. Comment
+     on the issue that it is waiting for a human merge, and if a label still
+     will not apply, say in that comment which one is missing. Leave the card
+     in Review, `$B release <n>`, and finish with
      `RESULT: review #<n> waiting reason="held for human: <first reason>"`.
    - Exit 5: the PR merged but the migration command failed. The gate has
-     posted a 🚨 comment on the PR. `$B move <n> blocked`, comment on the
-     issue linking that PR comment, `$B release <n>`, and finish with
+     posted a 🚨 comment on the PR and labelled it `factory:needs-human`; if
+     it printed `merge-gate: hold label not applied`, add the label to the PR
+     yourself (`gh pr edit <pr> --add-label factory:needs-human`) and check it
+     landed. `$B move <n> blocked`, comment on the
+     issue linking that PR comment (and saying so if the label is missing), `$B release <n>`, and finish with
      `RESULT: review #<n> blocked reason="migration failed after merge"`.
    - Other non-zero: the gate's message says why. If the head moved or checks are
      pending, leave the card in Review, comment, release (the next wave
