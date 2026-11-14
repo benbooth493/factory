@@ -95,6 +95,9 @@ FAKE_LABELS='[]' "$board" claim 3 >/dev/null
 check "claim adds label" "1" "$(grep -c -- '--add-label factory:wip' "$GH_LOG")"
 if FAKE_LABELS='["factory:wip"]' "$board" claim 3 >/dev/null 2>&1; then r=0; else r=1; fi
 check "claim refuses when held" "1" "$r"
+check "release reports success" "released #3" "$(FAKE_LABELS='[]' "$board" release 3)"
+if FAKE_LABELS='["factory:wip"]' "$board" release 3 >/dev/null 2>&1; then r=0; else r=1; fi
+check "release fails when the label is still there" "1" "$r"
 
 # bounce counting
 check "bounces none" "0" "$(FAKE_LABELS='["bug"]' "$board" bounces 3)"

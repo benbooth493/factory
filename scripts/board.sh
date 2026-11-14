@@ -235,6 +235,13 @@ cmd_claim() {
 cmd_release() {
   [ $# -eq 1 ] || die "usage: release <issue>"
   gh issue edit "$1" --repo "$(repo)" --remove-label "$WIP_LABEL" >/dev/null 2>&1 || true
+  # A failed edit is silent above, so read the label back: a claim left behind
+  # makes the next lane's claim fail.
+  local labels
+  labels=$(issue_labels "$1") || die "could not read #$1's labels after release"
+  if jq -e --arg l "$WIP_LABEL" 'index($l)' <<<"$labels" >/dev/null; then
+    die "#$1 still has $WIP_LABEL after release"
+  fi
   echo "released #$1"
 }
 

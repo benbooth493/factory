@@ -20,8 +20,10 @@ export const meta = {
 //   }],
 // }
 // The orchestrator claims each card for its entry lane before launching. A lane
-// releases the claim when it finishes, so every later lane in the chain claims
-// the card again first: the factory:wip label stays the only mutex.
+// releases the claim when it finishes, and every later lane in the chain claims
+// the card again first: the factory:wip label stays the only mutex. A lane can
+// forget its release or have it fail, so a later lane releases before it
+// claims. That is safe because this chain is the card's only owner for the wave.
 // The board is the state. This script decides nothing a lane did not report;
 // a card that stops advancing is picked up by the next wave from its column.
 const input = (() => {
@@ -46,7 +48,7 @@ const RESULT_SCHEMA = {
       enum: ['qa', 'review', 'done', 'build', 'waiting', 'blocked', 'failed'],
       description: 'the outcome word from the RESULT line; failed = you could not finish the lane',
     },
-    released: { type: 'boolean', description: 'true when you ran board.sh release for this card' },
+    released: { type: 'boolean', description: 'true when board.sh release for this card exited 0' },
     pr: { type: 'string' },
     sha: { type: 'string' },
   },
@@ -59,11 +61,14 @@ const lanePrompt = (lane, card, claimFirst) => [
   `You are the factory **${lane}** lane for issue #${card.number} ("${card.title}") in ${input.repo}.`,
   `CLAUDE_PLUGIN_ROOT is ${input.pluginRoot}; wherever the skill says \${CLAUDE_PLUGIN_ROOT}, use that path.`,
   claimFirst
-    ? `The previous lane released the card. Claim it first from the repo root: \`${B} claim ${card.number}\`. ` +
+    ? `This wave owns the card, and the previous lane may have left its claim behind. ` +
+      `Claim it first from the repo root: \`${B} release ${card.number}\`, then \`${B} claim ${card.number}\`. ` +
       `If the claim fails, change nothing and return outcome failed with result "RESULT: ${lane} #${card.number} failed reason=\\"claim held\\"".`
     : `The card is already claimed for you (factory:wip).`,
   `Read \`${input.pluginRoot}/skills/${lane}/SKILL.md\` and follow it exactly. Config is \`.claude/factory.json\`.`,
   `Card grade: ${card.grade || 'medium'}. Put \`Grade: ${card.grade || 'medium'}\` in a Build hand-off comment.`,
+  `Whatever the outcome (hand-off, bounce, block, hold or failure), your last command is \`${B} release ${card.number}\`. ` +
+    `If it exits non-zero, run it once more; set released to true only when it exited 0.`,
   `Return the RESULT line the skill asks for, verbatim, plus its outcome word, through structured output.`,
 ].join('\n')
 

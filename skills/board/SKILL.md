@@ -204,8 +204,8 @@ run picks them up from there. Do not delete branches or worktrees.
 
    `lane` is the card's entry lane (`build` for Ready and bounced cards). Each
    card runs its lanes in order and keeps going while a lane hands it on
-   (build → qa → review); a later lane claims the card itself, because the
-   lane before released it. A bounce, hold, block or failure ends that card's
+   (build → qa → review); a later lane releases and then claims the card
+   itself, so a lane that left its claim behind does not stop the chain. A bounce, hold, block or failure ends that card's
    chain for this wave. The workflow runs in the background; wait for its
    completion notice, then reconcile from its `cards` result.
 
@@ -227,9 +227,10 @@ run picks them up from there. Do not delete branches or worktrees.
    handle it as in step 6.
 6. **Reconcile.** When the wave finishes, read each lane's final line
    (`RESULT: <lane> #<n> <outcome> ...`; a workflow wave returns it per card
-   as `result`, with every lane it ran in `lanes`). Make sure the card actually moved
-   and `factory:wip` was released; if a lane died without doing so, release
-   the claim, comment what happened, and leave the card where it is so the
+   as `result`, with every lane it ran in `lanes`). Make sure the card actually moved,
+   and run `board.sh release <n>` for every card in the wave: nothing of
+   yours is running, so no claim should be left. If a lane died, also
+   comment what happened and leave the card where it is so the
    next wave retries it. A card that fails the same lane twice in one run
    goes to Blocked with a comment.
 7. **Repeat** from step 3 until there is no work in Ready, Build, QA or

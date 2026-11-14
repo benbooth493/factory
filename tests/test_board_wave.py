@@ -26,7 +26,7 @@ const OUTCOMES = JSON.parse(outcomesJson)
 const calls = []
 const agent = async (prompt, opts) => {
   calls.push({ label: opts.label, phase: opts.phase, model: opts.model || null,
-               claimFirst: prompt.includes('Claim it first') })
+               claimFirst: prompt.includes('Claim it first'), prompt })
   const queue = OUTCOMES[opts.label] || []
   const outcome = queue.shift()
   if (outcome === undefined) return null
@@ -73,6 +73,15 @@ class BoardWaveTest(unittest.TestCase):
         out = r["out"]["cards"][0]
         self.assertEqual(out["lanes"], "build:qa → qa:review → review:done")
         self.assertEqual(out["outcome"], "done")
+
+    def test_later_lane_releases_before_claiming(self):
+        # Build may leave factory:wip behind; QA must not depend on its release.
+        r = self.run_wave([self.card(8, "build")], {"build:#8": ["qa"], "qa:#8": ["build"]})
+        build, qa = (c["prompt"] for c in r["calls"])
+        self.assertIn("board.sh release 8`, then `/plugin/scripts/board.sh claim 8`", qa)
+        self.assertNotIn("board.sh claim 8", build)
+        for prompt in (build, qa):  # every lane ends by releasing, whatever the outcome
+            self.assertIn("your last command is `/plugin/scripts/board.sh release 8`", prompt)
 
     def test_bounce_ends_the_chain(self):
         r = self.run_wave([self.card(2, "build")],
