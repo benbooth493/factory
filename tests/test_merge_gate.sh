@@ -31,7 +31,7 @@ write_config() {
 pass=0; fail=0
 run() { # run <name> <expected-exit> [env...]
   local name="$1" want="$2"; shift 2
-  : > "$GH_LOG"
+  : > "$GH_LOG"; rm -f "$GH_LOG.labels" "$GH_LOG.editfails"
   set +e; env "$@" bash "$gate" 3 "$head" > "$tmp/out" 2>&1; got=$?; set -e
   if [ "$got" = "$want" ]; then pass=$((pass + 1)); echo "ok   $name"
   else fail=$((fail + 1)); echo "FAIL $name (exit $got, want $want)"; sed 's/^/     /' "$tmp/out"; fi
@@ -67,6 +67,18 @@ if grep -q "pr merge" "$GH_LOG"; then fail=$((fail + 1)); echo "FAIL merged desp
 else pass=$((pass + 1)); echo "ok   no merge when held"; fi
 if grep -q -- "--add-label factory:needs-human" "$GH_LOG"; then pass=$((pass + 1)); echo "ok   held PR labelled needs-human"
 else fail=$((fail + 1)); echo "FAIL needs-human label missing"; fi
+
+if grep -q "hold label not applied" "$tmp/out"; then fail=$((fail + 1)); echo "FAIL label reported missing though it landed"
+else pass=$((pass + 1)); echo "ok   no missing-label warning when the label lands"; fi
+
+run "hold survives one failed label call" 4 FAKE_HEAD="$head" FAKE_EDIT_FAIL=1 FACTORY_JEV_LOG=/dev/null FACTORY_JEV_FAKE_RESPONSE="$fx/risk_sensitive.json"
+if grep -qx "factory:needs-human" "$GH_LOG.labels" && ! grep -q "hold label not applied" "$tmp/out"; then
+  pass=$((pass + 1)); echo "ok   label retried until it landed"
+else fail=$((fail + 1)); echo "FAIL label lost after one failed call"; cat "$tmp/out"; fi
+
+run "hold says so when the label never lands" 4 FAKE_HEAD="$head" FAKE_EDIT_FAIL=9 FACTORY_JEV_LOG=/dev/null FACTORY_JEV_FAKE_RESPONSE="$fx/risk_sensitive.json"
+if grep -q "^merge-gate: hold label not applied$" "$tmp/out"; then pass=$((pass + 1)); echo "ok   missing label reported"
+else fail=$((fail + 1)); echo "FAIL missing label not reported"; cat "$tmp/out"; fi
 
 run "live veto lets a safe change merge" 0 FAKE_HEAD="$head" FACTORY_JEV_FAKE_RESPONSE="$fx/risk_safe.json"
 grep -q "pr merge" "$GH_LOG" && { pass=$((pass + 1)); echo "ok   safe change merged"; } || { fail=$((fail + 1)); echo "FAIL safe change not merged"; }
@@ -165,6 +177,10 @@ if grep -q "MIGRATION FAILED" "$GH_LOG" && grep -q "boom" "$GH_LOG" \
    && grep -q -- "--add-label factory:needs-human" "$GH_LOG"; then
   pass=$((pass + 1)); echo "ok   failed migration posts a loud comment"
 else fail=$((fail + 1)); echo "FAIL no loud comment"; cat "$GH_LOG"; fi
+
+run "failed migration says so when the label never lands" 5 FAKE_HEAD="$head" FAKE_FILES="$mig_files" FAKE_EDIT_FAIL=9
+if grep -q "^merge-gate: hold label not applied$" "$tmp/out"; then pass=$((pass + 1)); echo "ok   missing label reported after a failed migration"
+else fail=$((fail + 1)); echo "FAIL missing label not reported after a failed migration"; cat "$tmp/out"; fi
 
 policy_config ".auto_merge = false | .migrations = {allowed: true, command: \"touch '$tmp/migrated'\"}"
 rm -f "$tmp/migrated"
