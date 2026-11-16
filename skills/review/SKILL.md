@@ -30,7 +30,12 @@ bounce a card on their own.
    Record the head SHA. It must equal the SHA in the latest QA PASS comment
    (QA's screenshots live on the `factory-evidence` branch, not the PR). If
    it differs, the code changed after QA: move the card back to QA
-   (`$B move <n> qa`, release, comment why) and stop.
+   (`$B move <n> qa`, release, comment why) and stop. One exception: a PR
+   comment `🔀 factory merged <base> into this branch ... <qa sha> → <head>`
+   means the gate merged the base branch in without conflicts. Check that
+   the head's first parent is the QA sha
+   (`gh api repos/<repo>/commits/<head> --jq '.parents[0].sha'`); if so,
+   that head counts as the QA-passed commit.
 2. **Read the diff cold.** `gh pr diff <pr>`. Write down, privately, your
    hypotheses about what could be wrong before looking at comments.
 3. **Check against the issue.** Every acceptance criterion addressed; nothing
@@ -61,7 +66,11 @@ bounce a card on their own.
    with a 2–5 line summary of what you checked. (Use `--comment`, not
    `--approve`: GitHub forbids approving your own PRs and the gate is the
    real approval.)
-2. Run the gate: `$G <pr> <sha>`.
+2. Run the gate: `$G <pr> <sha>`. Give it a long timeout or run it in the
+   background: when GitHub reports conflicts that git merges cleanly, the
+   gate pushes the base merge to the PR branch, waits up to 15 minutes for
+   the checks on the new head, and runs itself on that head. The exit code
+   is then the new head's; use that head as `<sha>` from here on.
    - Exit 0: the PR is merged (or left for a human if `auto_merge` is false).
      `$B move <n> done` only if it actually merged (`gh pr view <pr> --json state`
      shows MERGED); otherwise leave it in Review with a comment. `$B release <n>`.
@@ -85,10 +94,18 @@ bounce a card on their own.
      landed. `$B move <n> blocked`, comment on the
      issue linking that PR comment (and saying so if the label is missing), `$B release <n>`, and finish with
      `RESULT: review #<n> blocked reason="migration failed after merge"`.
-   - Other non-zero: the gate's message says why. If the head moved or checks are
-     pending, leave the card in Review, comment, release (the next wave
-     retries). If verify failed or there are conflicts, treat it as a
-     request for changes below.
+   - Exit 3: the PR conflicts with the base branch and the merge needs
+     manual resolution. Another PR merged first; this is not a review
+     finding. Comment on the PR with `Reason: merge_conflict` on the first
+     line and the gate's message, `$B bounce <n> merge_conflict` (it adds no
+     `factory:bounce-N` label), `$B move <n> build` whatever the bounce
+     count, `$B release <n>`, and finish with
+     `RESULT: review #<n> build bounces=<k>`. Skip the bounce rule and the
+     Jev bounce reason.
+   - Other non-zero: the gate's message says why. If the head moved, checks are
+     pending (also on a new head the gate pushed) or the gate could not push
+     its base merge, leave the card in Review, comment, release (the next
+     wave retries). If verify failed, treat it as a request for changes below.
 
 ## Request changes
 

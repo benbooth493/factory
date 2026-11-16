@@ -68,6 +68,26 @@ check "move never lists the board" "0" "$(grep -c 'repositoryOwner\|item-list' "
 check "next takes columns in priority order" "13:Review 2:Ready 3:Ready" \
   "$("$board" next review,qa,build,ready 3 | jq -r 'map("\(.number):\(.status)") | join(" ")')"
 
+# two cards whose open PRs change the same file never share a wave
+prs='[{"headRefName":"factory/13","files":[{"path":"app/screen.tsx"},{"path":"app/a.ts"}]},
+      {"headRefName":"factory/2-dark-mode","files":[{"path":"app/theme.css"},{"path":"app/screen.tsx"}]},
+      {"headRefName":"factory/3","files":[{"path":"app/login.ts"}]},
+      {"headRefName":"dependabot/npm/x","files":[{"path":"app/login.ts"}]}]'
+check "next leaves out a card whose PR overlaps a picked one" "13 3" \
+  "$(FAKE_PRS="$prs" "$board" next review,qa,build,ready 3 | jq -r '[.[].number] | map(tostring) | join(" ")')"
+check "next keeps cards with no PR" "13 2 3" \
+  "$(FAKE_PRS='[{"headRefName":"factory/13","files":[{"path":"app/screen.tsx"}]}]' \
+     "$board" next review,qa,build,ready 3 | jq -r '[.[].number] | map(tostring) | join(" ")')"
+check "a stalled card keeps no other card out" "13 2 3" \
+  "$(FAKE_PRS="$prs" "$board" next review,qa,build,ready 3 13 | jq -r '[.[].number] | map(tostring) | join(" ")')"
+check "next plans without the rule when open PRs cannot be read" "13 2 3|file-overlap" \
+  "$(FAKE_PR_LIST_FAIL="HTTP 502" "$board" next review,qa,build,ready 3 2>"$tmp/err" \
+     | jq -r '[.[].number] | map(tostring) | join(" ")')|$(grep -o file-overlap "$tmp/err")"
+if out=$(FAKE_PR_LIST_FAIL="API rate limit exceeded" "$board" next review,qa,build,ready 3 2>"$tmp/err"); then r=0; else r=1; fi
+check "next stops on a rate limit while reading open PRs" "1 secondary |" "$r $(grep -o secondary "$tmp/err" | head -n1) |$out"
+check "next returns only card fields" "false" \
+  "$(FAKE_PRS="$prs" "$board" next review,qa,build,ready 3 | jq '.[0] | has("files")')"
+
 # a 300-item board: a wave plan reads it once, archived cards stay out
 jq -n '{nodes: [range(1; 301) as $i | {
   id: "PVTI_big\($i)", isArchived: ($i <= 150),
@@ -103,6 +123,10 @@ check "release fails when the label is still there" "1" "$r"
 check "bounces none" "0" "$(FAKE_LABELS='["bug"]' "$board" bounces 3)"
 check "bounces max" "2" "$(FAKE_LABELS='["factory:bounce-1","factory:bounce-2"]' "$board" bounces 3)"
 check "bounce increments" "3" "$(FAKE_LABELS='["factory:bounce-2"]' "$board" bounce 3)"
+: > "$GH_LOG"
+check "merge-conflict bounce is not counted" "2" \
+  "$(FAKE_LABELS='["factory:bounce-2"]' "$board" bounce 3 merge_conflict)"
+check "merge-conflict bounce adds no label" "0" "$(grep -c -- '--add-label' "$GH_LOG" || true)"
 
 # doctor passes with a complete board
 check "doctor ready" "ready" "$("$board" doctor | tail -n1)"

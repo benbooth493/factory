@@ -31,7 +31,7 @@ write_config() {
 pass=0; fail=0
 run() { # run <name> <expected-exit> [env...]
   local name="$1" want="$2"; shift 2
-  : > "$GH_LOG"; rm -f "$GH_LOG.labels" "$GH_LOG.editfails"
+  : > "$GH_LOG"; rm -f "$GH_LOG.labels" "$GH_LOG.editfails" "$GH_LOG.views"
   set +e; env "$@" bash "$gate" 3 "$head" > "$tmp/out" 2>&1; got=$?; set -e
   if [ "$got" = "$want" ]; then pass=$((pass + 1)); echo "ok   $name"
   else fail=$((fail + 1)); echo "FAIL $name (exit $got, want $want)"; sed 's/^/     /' "$tmp/out"; fi
@@ -48,7 +48,59 @@ fi
 run "refuses when head moved since review" 1 FAKE_HEAD=0000000000000000000000000000000000000000
 run "refuses with failing check" 1 FAKE_HEAD="$head" FAKE_CHECK=FAILURE
 run "refuses with pending check" 1 FAKE_HEAD="$head" FAKE_CHECK=PENDING
-run "refuses with conflicts" 1 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+run "refuses when GitHub reports conflicts but the base is merged in" 1 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+
+# The base moves on after review. A change the branch does not touch merges
+# cleanly: the gate pushes that merge, waits for its checks and runs on it.
+base_sha=$(git rev-parse main)
+echo base2 > a.txt && git commit -qam "base moves" && git push -q origin main
+ref="$tmp/origin.git:factory/3"
+pushed() { git fetch -q origin; git rev-parse origin/factory/3; }
+
+printf '#!/bin/sh\n[ ! -f reject ]\n' > "$tmp/origin.git/hooks/update" && chmod +x "$tmp/origin.git/hooks/update"
+touch "$tmp/origin.git/reject"
+run "says so when the base merge cannot be pushed" 1 FAKE_HEAD="$head" FAKE_HEAD_REF="$ref" FAKE_CONFLICTING_AT="$head"
+if [ "$(pushed)" = "$head" ] && grep -q "could not push the main merge" "$tmp/out" && ! grep -q "pr merge" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   rejected push is named, nothing merged"
+else fail=$((fail + 1)); echo "FAIL rejected push not reported"; cat "$tmp/out"; fi
+rm "$tmp/origin.git/reject"
+
+run "conflicting PR that merges cleanly gets the base merged in, then merges" 0 FAKE_HEAD="$head" \
+  FAKE_HEAD_REF="$ref" FAKE_CONFLICTING_AT="$head" FAKE_PENDING_VIEWS=2 FACTORY_GATE_POLL=0
+new=$(pushed)
+if [ "$(git rev-parse "$new^1" "$new^2" 2>/dev/null | tr '\n' ' ')" = "$head $(git rev-parse origin/main) " ] \
+   && grep -q "factory merged \`main\` into this branch" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   base merge pushed to the PR branch and noted on the PR"
+else fail=$((fail + 1)); echo "FAIL base merge not pushed"; cat "$tmp/out"; fi
+if [ "$(cat "$GH_LOG.views")" = 2 ] && grep -q "running: test -f b.txt" "$tmp/out" \
+   && grep -q -- "--match-head-commit $new" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   waited for the new head's checks, verified it, merge pinned to it"
+else fail=$((fail + 1)); echo "FAIL new head not checked, verified and merged"; cat "$tmp/out"; fi
+head=$new
+
+# Checks that never finish on the new head: no merge, the next run picks it up.
+echo more > c.txt && git add c.txt && git commit -qm "base moves again" && git push -q origin main
+run "does not merge while the new head's checks are pending" 1 FAKE_HEAD="$head" \
+  FAKE_HEAD_REF="$ref" FAKE_CONFLICTING_AT="$head" FAKE_PENDING_VIEWS=99 FACTORY_GATE_CHECK_WAIT=0
+new=$(pushed)
+if [ "$new" != "$head" ] && grep -q "run the gate again on $new" "$tmp/out" && ! grep -q "pr merge" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   pending checks named with the new head, nothing merged"
+else fail=$((fail + 1)); echo "FAIL merged or silent with pending checks"; cat "$tmp/out"; fi
+head=$new
+run "next run on the new head merges" 0 FAKE_HEAD="$head"
+
+# A change to the same line needs a person: exit 3, branch left alone.
+git checkout -q -b factory/9 "$base_sha"
+echo other > a.txt && git commit -qam other && git push -q origin factory/9
+head=$(git rev-parse HEAD)
+git checkout -q main
+run "real conflict exits 3" 3 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+run "real conflict exits 3 before GitHub notices" 3 FAKE_HEAD="$head"
+git fetch -q origin
+if [ "$(git rev-parse origin/factory/9)" = "$head" ] && ! grep -q "pr merge" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   conflicting branch left untouched"
+else fail=$((fail + 1)); echo "FAIL conflicting branch changed"; fi
+head=$new
 
 write_config "false"
 run "refuses when verify fails" 1 FAKE_HEAD="$head"

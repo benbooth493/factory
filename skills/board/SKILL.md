@@ -46,7 +46,8 @@ Labels: `factory:wip` is the claim mutex (one lane per card).
 (merge policy, migration or Jev veto); waves skip those cards until a human
 merges and moves them, or removes the label.
 `factory:bounce-N` counts trips back to Build. At `max_bounces` (default 2)
-the next failure goes to Blocked instead.
+the next failure goes to Blocked instead. A trip back for a merge conflict
+with the base branch is not counted.
 
 ## Commands
 
@@ -166,7 +167,14 @@ run picks them up from there. Do not delete branches or worktrees.
    cards a lane bounced back), because finishing work beats starting work.
    Each card's `status` says which lane it enters. Don't call `next` per
    column: every call reads the whole board, and big boards hit GitHub's
-   secondary rate limit. Never put two lanes on the same card.
+   secondary rate limit. Never put two lanes on the same card. `next`
+   leaves out a card whose open PR changes a file that the open PR of a
+   card already in the wave also changes; it comes back in a later wave,
+   after the first PR has merged. Don't add it back yourself. From the
+   second wave on, pass as a third argument the cards of the previous wave
+   that are still in the column they started in
+   (`board.sh next review,qa,build,ready 3 12,15`): a card that did not
+   advance keeps no other card out.
 4. **Lint Ready cards before building.** `lint-cards.py --json --issue <n>`
    decides whether the card has checkable criteria; any flag sends it to
    Backlog with the flagged lines as the comment (`/factory:board lint` is
