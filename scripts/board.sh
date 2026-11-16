@@ -9,12 +9,15 @@
 #   status                      card counts per column
 #   items [column]              JSON array of issue cards (optionally one column)
 #   next <col>[,<col>...] [n]   up to n unclaimed cards, by column order then oldest
-#                               first, from one board read (skips factory:needs-human)
+#                               first, from one board read (skips factory:needs-human,
+#                               and a card whose open PR changes a file that the
+#                               open PR of a card already picked also changes)
 #   move <issue> <column-key>   move a card (column-key: ready|build|qa|review|done|blocked|backlog)
 #   claim <issue>               take the factory:wip label; exits 1 if already held
 #   release <issue>             drop the factory:wip label
 #   bounces <issue>             how many times QA/Review sent the card back to Build
-#   bounce <issue>              record one more bounce (adds factory:bounce-N label)
+#   bounce <issue> [reason]     record one more bounce (adds factory:bounce-N label);
+#                               reason merge_conflict records nothing
 #   comment <issue> <file|->    post a comment from a file or stdin
 #
 # Config: $FACTORY_CONFIG, default <repo root>/.claude/factory.json
@@ -150,17 +153,32 @@ cmd_items() {
 
 cmd_next() {
   [ $# -ge 1 ] || die "usage: next <column>[,<column>...] [n]"
-  local cols="[]" key col n
+  local cols="[]" key col n cands prs="{}"
   n="${2:-1}"
   for key in $(printf '%s' "$1" | tr ',' ' '); do
     col=$(column_name "$key")
     cols=$(jq -c --arg c "$col" '. + [$c]' <<<"$cols")
   done
-  items_json | jq --argjson cols "$cols" --arg wip "$WIP_LABEL" --arg hold "$HOLD_LABEL" --argjson n "$n" '
+  cands=$(items_json | jq --argjson cols "$cols" --arg wip "$WIP_LABEL" --arg hold "$HOLD_LABEL" '
     [ .[] | select(.status as $s | $cols | index($s))
       | select((.labels | index($wip)) | not)
       | select((.labels | index($hold)) | not) ]
-    | sort_by(.status as $s | ($cols | index($s)), .number) | .[:$n]'
+    | sort_by(.status as $s | ($cols | index($s)), .number)') || exit 1
+  # Two PRs that change the same file conflict once the first merges, so only
+  # one of them goes in a wave. Files of each card's open PR, keyed by issue
+  # number (branch factory/<n>[-slug]); a card with no PR has none.
+  # shortcut: reads 100 open PRs and 100 files per PR, page it when a repo has more
+  if [ "$n" -gt 1 ] && [ "$(jq length <<<"$cands")" -gt 1 ]; then
+    prs=$(ghq pr list --repo "$(repo)" --state open --limit 100 --json headRefName,files --jq '
+      [ .[] | (.headRefName | capture("^factory/(?<n>[0-9]+)(-|$)")) as $m
+        | {key: $m.n, value: [.files[].path]} ] | from_entries') || exit 1
+  fi
+  jq --argjson prs "$prs" --argjson n "$n" '
+    reduce .[] as $c ({picked: [], files: []};
+      ($prs[$c.number | tostring] // []) as $f
+      | if (.picked | length) >= $n or (($f - .files) | length) < ($f | length) then .
+        else .picked += [$c] | .files += $f end)
+    | .picked' <<<"$cands"
 }
 
 cmd_status() {
@@ -252,9 +270,12 @@ cmd_bounces() {
 }
 
 cmd_bounce() {
-  [ $# -eq 1 ] || die "usage: bounce <issue>"
+  [ $# -ge 1 ] || die "usage: bounce <issue> [reason]"
   local n
   n=$(cmd_bounces "$1")
+  # A conflict with the base branch is not the card's fault, so it never
+  # counts towards Blocked.
+  if [ "${2:-}" = "merge_conflict" ]; then echo "$n"; return; fi
   n=$((n + 1))
   ensure_label "${BOUNCE_PREFIX}$n" "d93f0b" "Sent back to Build $n time(s)"
   gh issue edit "$1" --repo "$(repo)" --add-label "${BOUNCE_PREFIX}$n" >/dev/null

@@ -240,7 +240,10 @@ leave the merge button to you.
 **Merge gate** ([`scripts/merge-gate.sh`](scripts/merge-gate.sh)) is the only
 way factory merges. It refuses unless the PR head is exactly the commit the
 reviewer approved, every check has passed, there are no conflicts, and your
-`verify_commands` pass on the head merged with the current base. The merge
+`verify_commands` pass on the head merged with the current base. When
+GitHub reports a conflict that git merges cleanly, the gate merges the base
+branch into the PR branch and runs again on the new head. A conflict that
+needs a person sends the card back to Build without counting a bounce. The merge
 is pinned with `--match-head-commit`, so a push that sneaks in afterwards
 makes GitHub reject it. No `verify_commands`, no merge.
 

@@ -48,7 +48,37 @@ fi
 run "refuses when head moved since review" 1 FAKE_HEAD=0000000000000000000000000000000000000000
 run "refuses with failing check" 1 FAKE_HEAD="$head" FAKE_CHECK=FAILURE
 run "refuses with pending check" 1 FAKE_HEAD="$head" FAKE_CHECK=PENDING
-run "refuses with conflicts" 1 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+run "refuses when GitHub reports conflicts but the base is merged in" 1 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+
+# The base moves on after review. A change the branch does not touch merges
+# cleanly: the gate pushes that merge and asks to be run on the new head.
+base_sha=$(git rev-parse main)
+echo base2 > a.txt && git commit -qam "base moves" && git push -q origin main
+run "conflicting PR that merges cleanly gets the base merged in" 6 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+git fetch -q origin
+new=$(git rev-parse origin/factory/3)
+if [ "$(git rev-parse "$new^1" "$new^2" 2>/dev/null | tr '\n' ' ')" = "$head $(git rev-parse origin/main) " ] \
+   && grep -q "^merge-gate: merged main into #3; new head $new$" "$tmp/out" && ! grep -q "pr merge" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   base merge pushed to the PR branch, nothing merged yet"
+else fail=$((fail + 1)); echo "FAIL base merge not pushed"; cat "$tmp/out"; fi
+head=$new
+run "rerun on the new head verifies and merges" 0 FAKE_HEAD="$head"
+if grep -q "running: test -f b.txt" "$tmp/out" && grep -q -- "--match-head-commit $new" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   verify reran and the merge is pinned to the new head"
+else fail=$((fail + 1)); echo "FAIL rerun did not verify and merge the new head"; cat "$tmp/out"; fi
+
+# A change to the same line needs a person: exit 3, branch left alone.
+git checkout -q -b factory/9 "$base_sha"
+echo other > a.txt && git commit -qam other && git push -q origin factory/9
+head=$(git rev-parse HEAD)
+git checkout -q main
+run "real conflict exits 3" 3 FAKE_HEAD="$head" FAKE_MERGEABLE=CONFLICTING
+run "real conflict exits 3 before GitHub notices" 3 FAKE_HEAD="$head"
+git fetch -q origin
+if [ "$(git rev-parse origin/factory/9)" = "$head" ] && ! grep -q "pr merge" "$GH_LOG"; then
+  pass=$((pass + 1)); echo "ok   conflicting branch left untouched"
+else fail=$((fail + 1)); echo "FAIL conflicting branch changed"; fi
+head=$new
 
 write_config "false"
 run "refuses when verify fails" 1 FAKE_HEAD="$head"

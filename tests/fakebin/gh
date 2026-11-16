@@ -90,6 +90,11 @@ case "$1 ${2:-}" in
         labels:[($l + $a)[] | {name:.}], files:$f, changedFiles:($f | length),
         additions:([$f[].additions] | add // 0), deletions:([$f[].deletions] | add // 0),
         closingIssuesReferences:[$i[] | {number:.}]}' ;;
+  "pr list")
+    # FAKE_PRS: open PRs as [{headRefName, files:[{path}]}], default none
+    jqf="."
+    while [ $# -gt 0 ]; do [ "$1" != "--jq" ] || jqf="$2"; shift; done
+    jq "$jqf" <<<"${FAKE_PRS:-[]}" ;;
   "pr ready"|"pr merge") : ;;
   "pr edit")
     # FAKE_EDIT_FAIL=N fails the first N label edits like a network timeout.
