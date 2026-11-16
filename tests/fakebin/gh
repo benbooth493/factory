@@ -82,7 +82,18 @@ case "$1 ${2:-}" in
     added='[]'
     [ ! -f "${GH_LOG:-}.labels" ] || added=$(jq -Rn '[inputs]' "$GH_LOG.labels")
     default_files='[{"path":"b.txt","additions":1,"deletions":0}]'
-    jq -n --arg h "${FAKE_HEAD:?}" --arg m "${FAKE_MERGEABLE:-MERGEABLE}" --arg c "${FAKE_CHECK:-SUCCESS}" \
+    # FAKE_HEAD_REF (<git dir>:<branch>): the head follows that branch, as a
+    # push to the PR branch would move it. FAKE_CONFLICTING_AT: the head sha
+    # GitHub calls conflicting. FAKE_PENDING_VIEWS=N: the first N views of a
+    # head other than FAKE_HEAD show its check as pending.
+    h="${FAKE_HEAD:?}" m="${FAKE_MERGEABLE:-MERGEABLE}" c="${FAKE_CHECK:-SUCCESS}"
+    [ -z "${FAKE_HEAD_REF:-}" ] || h=$(git --git-dir "${FAKE_HEAD_REF%%:*}" rev-parse "${FAKE_HEAD_REF#*:}")
+    [ "${FAKE_CONFLICTING_AT:-}" != "$h" ] || m=CONFLICTING
+    if [ "$h" != "$FAKE_HEAD" ] && [ -n "${FAKE_PENDING_VIEWS:-}" ]; then
+      n=$(cat "$GH_LOG.views" 2>/dev/null || echo 0)
+      if [ "$n" -lt "$FAKE_PENDING_VIEWS" ]; then echo $((n + 1)) > "$GH_LOG.views"; c=PENDING; fi
+    fi
+    jq -n --arg h "$h" --arg m "$m" --arg c "$c" \
       --argjson l "${FAKE_PR_LABELS:-[]}" --argjson a "$added" --argjson f "${FAKE_FILES:-$default_files}" \
       --argjson i "${FAKE_CLOSES:-[]}" \
       '{headRefOid:$h, headRefName:"factory/3", baseRefName:"main", mergeable:$m, isDraft:true,
@@ -92,6 +103,8 @@ case "$1 ${2:-}" in
         closingIssuesReferences:[$i[] | {number:.}]}' ;;
   "pr list")
     # FAKE_PRS: open PRs as [{headRefName, files:[{path}]}], default none
+    # FAKE_PR_LIST_FAIL: fail with this message instead
+    [ -z "${FAKE_PR_LIST_FAIL:-}" ] || { echo "$FAKE_PR_LIST_FAIL" >&2; exit 1; }
     jqf="."
     while [ $# -gt 0 ]; do [ "$1" != "--jq" ] || jqf="$2"; shift; done
     jq "$jqf" <<<"${FAKE_PRS:-[]}" ;;

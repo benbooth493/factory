@@ -8,7 +8,8 @@
 #   2. every reported check has passed
 #   3. the head merges with the current base without conflicts. When GitHub
 #      reports conflicts but git merges the base cleanly, the gate pushes that
-#      merge to the PR branch and exits 6: run it again on the new head.
+#      merge to the PR branch, waits for the checks on the new head (up to
+#      $FACTORY_GATE_CHECK_WAIT seconds, default 900) and runs itself on it.
 #   4. the merge policy lets a robot merge it (card kind, labels, size,
 #      migrations); otherwise it is held for a human
 #   5. the head, merged with the current base, passes every verify_command
@@ -26,8 +27,7 @@
 #             3 the PR conflicts with the base and needs manual resolution,
 #             4 held for a human (label factory:needs-human): merge policy,
 #               migrations, or the risk veto,
-#             5 merged, but the migration command failed (PR comment posted),
-#             6 merged the base into the PR branch; rerun on the new head it printed.
+#             5 merged, but the migration command failed (PR comment posted).
 
 # shellcheck disable=SC2016  # backticks in PR comment text are Markdown, not expansions
 
@@ -113,11 +113,24 @@ if [ "$(jq -r .mergeable <<<"$view")" = "CONFLICTING" ]; then
   new=$(git -C "$wt" rev-parse HEAD)
   [ "$new" != "$head" ] || die "GitHub reports conflicts on #$pr but $base is already merged in; try again later"
   git -C "$wt" push --quiet origin "HEAD:refs/heads/$(jq -r .headRefName <<<"$view")" \
-    || die "could not push the $base merge to PR #$pr" 3
+    || die "could not push the $base merge to the branch of PR #$pr; nothing changed"
   printf '🔀 **factory merged `%s` into this branch** with no conflicts: `%s` → `%s`. The reviewed diff is unchanged.\n' \
     "$base" "$head" "$new" | gh pr comment "$pr" --repo "$repo" --body-file - >/dev/null 2>&1 || true
-  echo "merge-gate: merged $base into #$pr; new head $new"
-  exit 6
+  echo "merge-gate: merged $base into #$pr; new head $new; waiting for its checks"
+  # Running on the new head before CI reports on it would merge it unchecked,
+  # so wait until it has as many checks as the old head and none is pending.
+  want=$(jq '.statusCheckRollup | length' <<<"$view")
+  SECONDS=0
+  until gh pr view "$pr" --repo "$repo" --json headRefOid,statusCheckRollup 2>/dev/null \
+      | jq -e --arg h "$new" --argjson n "$want" '
+          .headRefOid == $h and (.statusCheckRollup | length) >= $n
+          and all(.statusCheckRollup[]; (.conclusion // .state // "") | test("^(|PENDING|EXPECTED)$"; "i") | not)' >/dev/null; do
+    [ "$SECONDS" -lt "${FACTORY_GATE_CHECK_WAIT:-900}" ] \
+      || die "checks on the new head $new have not finished; run the gate again on $new"
+    sleep "${FACTORY_GATE_POLL:-15}"
+  done
+  cleanup; trap - EXIT
+  exec bash "$0" "$pr" "$new"
 fi
 
 # 4. Merge policy. Labels come from the PR and every issue it closes, so a

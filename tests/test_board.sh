@@ -78,6 +78,13 @@ check "next leaves out a card whose PR overlaps a picked one" "13 3" \
 check "next keeps cards with no PR" "13 2 3" \
   "$(FAKE_PRS='[{"headRefName":"factory/13","files":[{"path":"app/screen.tsx"}]}]' \
      "$board" next review,qa,build,ready 3 | jq -r '[.[].number] | map(tostring) | join(" ")')"
+check "a stalled card keeps no other card out" "13 2 3" \
+  "$(FAKE_PRS="$prs" "$board" next review,qa,build,ready 3 13 | jq -r '[.[].number] | map(tostring) | join(" ")')"
+check "next plans without the rule when open PRs cannot be read" "13 2 3|file-overlap" \
+  "$(FAKE_PR_LIST_FAIL="HTTP 502" "$board" next review,qa,build,ready 3 2>"$tmp/err" \
+     | jq -r '[.[].number] | map(tostring) | join(" ")')|$(grep -o file-overlap "$tmp/err")"
+if out=$(FAKE_PR_LIST_FAIL="API rate limit exceeded" "$board" next review,qa,build,ready 3 2>"$tmp/err"); then r=0; else r=1; fi
+check "next stops on a rate limit while reading open PRs" "1 secondary |" "$r $(grep -o secondary "$tmp/err" | head -n1) |$out"
 check "next returns only card fields" "false" \
   "$(FAKE_PRS="$prs" "$board" next review,qa,build,ready 3 | jq '.[0] | has("files")')"
 

@@ -170,7 +170,11 @@ run picks them up from there. Do not delete branches or worktrees.
    secondary rate limit. Never put two lanes on the same card. `next`
    leaves out a card whose open PR changes a file that the open PR of a
    card already in the wave also changes; it comes back in a later wave,
-   after the first PR has merged. Don't add it back yourself.
+   after the first PR has merged. Don't add it back yourself. From the
+   second wave on, pass as a third argument the cards of the previous wave
+   that are still in the column they started in
+   (`board.sh next review,qa,build,ready 3 12,15`): a card that did not
+   advance keeps no other card out.
 4. **Lint Ready cards before building.** `lint-cards.py --json --issue <n>`
    decides whether the card has checkable criteria; any flag sends it to
    Backlog with the flagged lines as the comment (`/factory:board lint` is
