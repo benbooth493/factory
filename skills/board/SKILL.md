@@ -45,6 +45,8 @@ Labels: `factory:wip` is the claim mutex (one lane per card).
 `factory:needs-human` marks a green PR the merge gate held for a person
 (merge policy, migration or Jev veto); waves skip those cards until a human
 merges and moves them, or removes the label.
+`factory:needs-info` marks a card intake sent back to Backlog with a
+question; intake removes it when it accepts the card on a later run.
 `factory:bounce-N` counts trips back to Build. At `max_bounces` (default 2)
 the next failure goes to Blocked instead. A trip back for a merge conflict
 with the base branch is not counted.
@@ -119,7 +121,8 @@ missing skill with the fix.
 
 Run `board.sh status`, then list in-flight cards (`board.sh items` filtered
 to `factory:wip`), anything in Blocked with its last comment's first line,
-and PRs labelled `factory:needs-human`. If `jev.enabled`, add a one-line
+PRs labelled `factory:needs-human`, and Backlog cards labelled
+`factory:needs-info`. If `jev.enabled`, add a one-line
 summary per decision point from `jev.py report` (mode, agreement, advice)
 and this month's spend. Read-only: change nothing.
 
@@ -175,7 +178,7 @@ run picks them up from there. Do not delete branches or worktrees.
    that are still in the column they started in
    (`board.sh next review,qa,build,ready 3 12,15`): a card that did not
    advance keeps no other card out.
-4. **Lint Ready cards before building.** `lint-cards.py --json --issue <n>`
+4. **Lint and intake Ready cards before building.** `lint-cards.py --json --issue <n>`
    decides whether the card has checkable criteria; any flag sends it to
    Backlog with the flagged lines as the comment (`/factory:board lint` is
    where the user tightens it). Vague cards produce confident wrong code.
@@ -187,11 +190,17 @@ run picks them up from there. Do not delete branches or worktrees.
      reverse), and its `difficulty` grades the card (below).
    - In shadow mode or when `available` is false, your judgement stands.
 
-   **Grade the card** (easy/medium/hard) as `references/router.md` says: the
-   card's own `Difficulty:` line or `difficulty:*` label, else Jev's live
-   card_lint answer (`route.py card <card.json> --jev <lint.json>`), else one
-   router subagent on the model `route.py router --tier <tier> --host <host> [--pin <pin>]`
-   prints, using the prompt in router.md. Skip grading when that prints `none`.
+   **Run intake on each card that passed lint**, as `references/router.md`
+   says: one read-only subagent on the model
+   `route.py router --tier <tier> --host <host> [--pin <pin>]` prints, using
+   the prompt in router.md, then `route.py verdict <reply file>`. On
+   `needs-info` or `reject` the card goes to Backlog with the reply as the
+   comment and the `factory:needs-info` label, and leaves the wave. Skip
+   intake when `route.py router` prints `none`.
+
+   **Grade the card** (easy/medium/hard): its own `Difficulty:` line or
+   `difficulty:*` label, else Jev's live card_lint answer
+   (`route.py card <card.json> --jev <lint.json>`), else intake's grade.
 5. **Dispatch.** For each card, `board.sh claim <n>` (skip the card if the
    claim fails). Get each lane's model with
    `route.py model --lane <lane> --grade <grade> --tier <tier> --host <host> [--pin <pin>]`
@@ -244,7 +253,8 @@ run picks them up from there. Do not delete branches or worktrees.
 7. **Repeat** from step 3 until there is no work in Ready, Build, QA or
    Review. With `--once`, stop after one wave.
 8. **Report** in a few lines: merged PRs (links), cards in Blocked and why,
-   PRs held for a human (`factory:needs-human`), anything still in flight.
+   PRs held for a human (`factory:needs-human`), cards intake sent back
+   with a question (`factory:needs-info`), anything still in flight.
    Offer `/factory:visual recap` for a merged branch if the user wants a
    picture of it.
 9. **Calibrate (optional).** Follow

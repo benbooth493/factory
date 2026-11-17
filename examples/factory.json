@@ -49,7 +49,7 @@
   "routing": {
     "claude": {
       "default": {
-        "router": "haiku",
+        "router": "fable",
         "easy": "sonnet",
         "medium": "opus",
         "hard": "inherit"

@@ -17,9 +17,9 @@ import route  # noqa: E402
 
 # (host, tier) -> (router, easy, medium, hard), as the README promises.
 EXPECTED = {
-    ("claude", "default"): ("haiku", "sonnet", "opus", "inherit"),
+    ("claude", "default"): ("fable", "sonnet", "opus", "inherit"),
     ("claude", "low"): ("haiku", "haiku", "sonnet", "opus"),
-    ("claude", "high"): ("sonnet", "opus", "opus", "opus"),
+    ("claude", "high"): ("fable", "opus", "opus", "opus"),
     ("codex", "default"): ("gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-sol", "gpt-6-astra"),
     ("codex", "low"): ("gpt-6-luna", "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-sol"),
     ("codex", "high"): ("gpt-6-luna", "gpt-6-astra", "gpt-6-astra", "gpt-6-astra"),
@@ -74,7 +74,7 @@ class ConfigOverrideTest(unittest.TestCase):
             self.assertEqual(route.lane_model(cfg, "build", grade, "high", "codex"), "gpt-pinned")
         self.assertEqual(route.router_model(cfg, "default", "codex"), route.NO_ROUTER)
         self.assertEqual(route.lane_model(cfg, "build", "easy"), "sonnet")  # claude host unaffected
-        self.assertEqual(route.router_model(cfg), "haiku")
+        self.assertEqual(route.router_model(cfg), "fable")
 
 
 class PinTest(unittest.TestCase):
@@ -136,6 +136,23 @@ class CardGradeTest(unittest.TestCase):
         self.assertEqual(route.resolve("Difficulty: medium"), {"grade": "medium", "source": "card"})
 
 
+class VerdictTest(unittest.TestCase):
+    def test_last_line_decides(self):
+        for reply, want in [
+            ("looks fine\nACCEPT hard", ("accept", "hard")),
+            ("**accept** easy\n\n", ("accept", "easy")),
+            ("hard", ("accept", "hard")),  # a bare grade, as the old router replied
+            ("1. Which page?\nNEEDS-INFO", ("needs-info", None)),
+            ("Duplicate of #4\nREJECT hard", ("reject", None)),
+            ("NEEDS-INFO?\nACCEPT medium", ("accept", "medium")),  # only the last line counts
+            ("I could not read the issue", ("accept", None)),  # garbled never holds a card
+            ("", ("accept", None)),
+        ]:
+            with self.subTest(reply=reply):
+                got = route.verdict(reply)
+                self.assertEqual((got["decision"], got["grade"]), want)
+
+
 class CliTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -164,7 +181,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.run_cli("model", "--lane", "review", "--grade", "easy"), (0, "opus"))
         self.assertEqual(self.run_cli("model", "--lane", "build", "--grade", "easy", "--tier", "low",
                                       "--host", "codex"), (0, "gpt-6-luna"))
-        self.assertEqual(self.run_cli("router", "--tier", "high"), (0, "sonnet"))
+        self.assertEqual(self.run_cli("router", "--tier", "low"), (0, "haiku"))
         self.assertEqual(self.run_cli("router", "--host", "codex", "--pin", "m"), (0, "none"))
         self.assertEqual(self.run_cli("model", "--lane", "build", "--grade", "nope")[0], 2)
 
@@ -184,6 +201,10 @@ class CliTest(unittest.TestCase):
             fh.write("plain body, no grade")
         rc, out = self.run_cli("card", card, "--jev", jev)
         self.assertEqual(json.loads(out), {"grade": "easy", "source": "jev"})
+        with open(card, "w") as fh:
+            fh.write("1. Which page?\nNEEDS-INFO")
+        rc, out = self.run_cli("verdict", card)
+        self.assertEqual(json.loads(out), {"decision": "needs-info", "grade": None})
 
     def test_missing_config_is_fine(self):
         os.environ["FACTORY_CONFIG"] = os.path.join(self.tmp.name, "absent.json")

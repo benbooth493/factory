@@ -98,21 +98,26 @@ Backlog with the flagged lines instead of being built on a guess.
 
 ## Models
 
-A cheap router grades each card easy, medium or hard; the run flag picks the
-model for each grade.
+Intake reads each Ready card once before it is built. It sends a card it
+cannot build without an answer back to Backlog with its questions and the
+`factory:needs-info` label, and grades the rest easy, medium or hard; the
+run flag picks the model for each grade. The Router column is the model
+intake runs on.
 
 | Run | Router | Easy | Medium | Hard |
 |---|---|---|---|---|
-| `run` | haiku | sonnet | opus | session model |
+| `run` | fable | sonnet | opus | session model |
 | `run --low` | haiku | haiku | sonnet | opus |
-| `run --high` | sonnet | opus | opus | opus |
+| `run --high` | fable | opus | opus | opus |
 | `run --codex` | gpt-6-luna | gpt-6.1-sol | gpt-6.1-sol | gpt-6-astra |
 | `run --codex --low` | gpt-6-luna | gpt-6-luna | gpt-6.1-sol | gpt-6.1-sol |
 | `run --codex --high` | gpt-6-luna | gpt-6-astra | gpt-6-astra | gpt-6-astra |
 | `run --codex=<model>` | none | model | model | model |
 
 A card's own `Difficulty: easy|medium|hard` line or `difficulty:*` label wins
-over the router, and Jev can grade cards once its `card_lint` point is live.
+over intake's grade, and Jev can grade cards once its `card_lint` point is live.
+Intake costs one Fable call per card; set `routing.claude.default.router` to
+`haiku` to make it cheaper.
 `models.<lane>` still overrides the ladder on Claude, and `routing` in config
 changes any cell. Codex details and what's tested: [docs/hosts.md](docs/hosts.md).
 
@@ -193,7 +198,7 @@ judgement is enough:
 | Point | Question | When live, it… |
 |---|---|---|
 | `collect_triage` | Is this Sentry/PostHog signal actionable, noise or expected? How severe? | drops near-certain noise (P ≥ 0.9) before a Claude verifier is spent on it |
-| `card_lint` | Does the card have checkable criteria? How hard is it? | grades the card for the router (`scripts/route.py` picks the model) |
+| `card_lint` | Does the card have checkable criteria? How hard is it? | grades the card ahead of intake (`scripts/route.py` picks the model) |
 | `risk_veto` | Does the PR touch auth, payments, secrets, migrations, user-data deletion or cloud permissions? | holds the merge for a human (`factory:needs-human`). **It can only block, never approve** |
 | `bounce_reason` | Missing test, logic bug, misread criteria, scope creep or environment? | labels the bounce so Build starts in the right place |
 

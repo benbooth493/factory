@@ -7,7 +7,8 @@ comes from, in order:
   1. the card itself: a `difficulty:<grade>` label, else a
      `Difficulty: <grade>` line in the body;
   2. Jev's card_lint answer, when that point is live and answered;
-  3. a cheap router agent (prompt in skills/board/references/router.md).
+  3. the intake agent (prompt in skills/board/references/router.md), which
+     also decides whether the card is clear enough to build.
 
 This script does the deterministic parts: reading a grade off a card,
 reading the run flags, and mapping (host, tier, grade, lane) to a model.
@@ -19,6 +20,7 @@ Commands:
                                        print the lane model ("inherit" = session model)
   route.py router [--tier T] [--host H] [--pin M]
                                        print the router model ("none" = skip the router)
+  route.py verdict <reply-file|->      JSON {decision, grade} from the intake agent's reply
   route.py host                        print the host this shell runs in (claude|codex)
 
 Model precedence for a lane, first match wins:
@@ -47,8 +49,8 @@ NO_ROUTER = "none"
 LADDERS: Dict[str, Dict[str, Dict[str, str]]] = {
     "claude": {
         "low":     {"router": "haiku",  "easy": "haiku",  "medium": "sonnet", "hard": "opus"},
-        "default": {"router": "haiku",  "easy": "sonnet", "medium": "opus",   "hard": INHERIT},
-        "high":    {"router": "sonnet", "easy": "opus",   "medium": "opus",   "hard": "opus"},
+        "default": {"router": "fable",  "easy": "sonnet", "medium": "opus",   "hard": INHERIT},
+        "high":    {"router": "fable",  "easy": "opus",   "medium": "opus",   "hard": "opus"},
     },
     "codex": {
         "low":     {"router": "gpt-6-luna", "easy": "gpt-6-luna",  "medium": "gpt-6.1-sol", "hard": "gpt-6.1-sol"},
@@ -137,6 +139,19 @@ def resolve(card: Any, jev: Any = None) -> Dict[str, Optional[str]]:
     if g:
         return {"grade": g, "source": "jev"}
     return {"grade": None, "source": None}
+
+
+DECISIONS = ("accept", "needs-info", "reject")
+
+
+def verdict(reply: Any) -> Dict[str, Optional[str]]:
+    """Intake's last line -> decision and grade. An unreadable reply is an
+    accept with no grade: only a clear needs-info or reject holds a card."""
+    lines = [ln for ln in str(reply).splitlines() if ln.strip()]
+    words = re.findall(r"[a-z-]+", lines[-1].lower()) if lines else []
+    decision = next((w for w in words if w in DECISIONS), "accept")
+    grade = next((g for g in map(norm_grade, words) if g), None)
+    return {"decision": decision, "grade": grade if decision == "accept" else None}
 
 
 # --- models --------------------------------------------------------------------
@@ -245,11 +260,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         s.add_argument("--tier", default="default", choices=TIERS)
         s.add_argument("--host", default=None, choices=HOSTS)
         s.add_argument("--pin")
+    sub.add_parser("verdict").add_argument("reply", help="the intake agent's reply, or -")
     sub.add_parser("host")
     a = p.parse_args(argv)
 
     if a.cmd == "host":
         print(detect_host())
+        return 0
+    if a.cmd == "verdict":
+        print(json.dumps(verdict(_read(a.reply))))
         return 0
     if a.cmd == "card":
         jev = _read(a.jev) if a.jev else None
