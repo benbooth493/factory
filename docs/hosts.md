@@ -25,10 +25,10 @@ Every host also needs `gh` (with the `project` scope), `jq`, `git`, bash
 
 ## Models
 
-The router grades each card; the flag and host pick the model
+Intake checks and grades each card; the flag and host pick the model
 (`skills/board/references/router.md` has the full table and the prompt).
 `--codex=<model>` or config `codex.model` pins one model for every lane and
-skips the router. Per-lane `models.<lane>` apply to Claude lanes only.
+skips intake. Per-lane `models.<lane>` apply to Claude lanes only.
 
 Override any cell in config:
 

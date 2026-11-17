@@ -8,7 +8,7 @@ decision points, each of which is `off`, `shadow` or `live` in config:
   collect_triage  Sentry/PostHog candidate: actionable, noise, or expected?
                   live: drop near-certain noise before a Claude verifier runs.
   card_lint       Ready card: checkable acceptance criteria? how hard?
-                  live: its difficulty grades the card for the router
+                  live: its difficulty grades the card ahead of intake
                   (scripts/route.py maps the grade to a model).
   risk_veto       PR about to merge: does it touch sensitive areas?
                   live: hold the merge for a human. It can only ever block.

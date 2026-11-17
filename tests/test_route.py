@@ -15,11 +15,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 
 import route  # noqa: E402
 
-# (host, tier) -> (router, easy, medium, hard), as the README promises.
+# (host, tier) -> (intake, easy, medium, hard), as the README promises.
 EXPECTED = {
-    ("claude", "default"): ("haiku", "sonnet", "opus", "inherit"),
+    ("claude", "default"): ("fable", "sonnet", "opus", "inherit"),
     ("claude", "low"): ("haiku", "haiku", "sonnet", "opus"),
-    ("claude", "high"): ("sonnet", "opus", "opus", "opus"),
+    ("claude", "high"): ("fable", "opus", "opus", "opus"),
     ("codex", "default"): ("gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-sol", "gpt-6-astra"),
     ("codex", "low"): ("gpt-6-luna", "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-sol"),
     ("codex", "high"): ("gpt-6-luna", "gpt-6-astra", "gpt-6-astra", "gpt-6-astra"),
@@ -74,7 +74,7 @@ class ConfigOverrideTest(unittest.TestCase):
             self.assertEqual(route.lane_model(cfg, "build", grade, "high", "codex"), "gpt-pinned")
         self.assertEqual(route.router_model(cfg, "default", "codex"), route.NO_ROUTER)
         self.assertEqual(route.lane_model(cfg, "build", "easy"), "sonnet")  # claude host unaffected
-        self.assertEqual(route.router_model(cfg), "haiku")
+        self.assertEqual(route.router_model(cfg), "fable")
 
 
 class PinTest(unittest.TestCase):
@@ -136,6 +136,42 @@ class CardGradeTest(unittest.TestCase):
         self.assertEqual(route.resolve("Difficulty: medium"), {"grade": "medium", "source": "card"})
 
 
+class VerdictTest(unittest.TestCase):
+    def test_decision_and_grade(self):
+        q = "1. Which page?\n"
+        for reply, want in [
+            ("looks fine\nACCEPT hard", ("accept", "hard")),
+            ("**accept** easy\n\n", ("accept", "easy")),
+            ("ACCEPT: medium.", ("accept", "medium")),
+            (q + "NEEDS-INFO", ("needs-info", None)),
+            (q + "NEEDS INFO", ("needs-info", None)),
+            (q + "needs_info", ("needs-info", None)),
+            (q + "NEEDS\u2011INFO", ("needs-info", None)),  # a non-ASCII hyphen
+            (q + "NEEDS-INFO\n```\n---\n", ("needs-info", None)),  # trailing fence and rule
+            (q + "NEEDS-INFO\nThanks!", ("needs-info", None)),  # a sign-off after it
+            ("Duplicate of #4\nREJECT hard", ("reject", None)),
+            (q + "NEEDS-INFO\nACCEPT medium", ("accept", "medium")),  # the last verdict wins
+            # prose that mentions a decision is not one
+            ("I would reject this if X; otherwise accept medium", ("accept", None)),
+            ("Reject the upload or truncate it?", ("accept", None)),
+            ("NEEDS-INFO", ("accept", None)),  # a hold with nothing to answer
+            ("I could not read the issue", ("accept", None)),
+            ("hard", ("accept", None)),
+            ("", ("accept", None)),
+        ]:
+            with self.subTest(reply=reply):
+                got = route.verdict(reply)
+                self.assertEqual((got["decision"], got["grade"]), want)
+                self.assertEqual(got["comment"] is None, want[0] == "accept")
+
+    def test_comment_drops_the_verdict_line(self):
+        got = route.verdict("1. Which page?\n2. What limit?\nNEEDS-INFO\n")["comment"]
+        self.assertTrue(got.startswith("❓ intake:"))
+        self.assertIn("2. What limit?", got)
+        self.assertNotIn("NEEDS-INFO", got)
+        self.assertNotIn("Ready", route.verdict("Duplicate of #4\nREJECT")["comment"])
+
+
 class CliTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -164,7 +200,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.run_cli("model", "--lane", "review", "--grade", "easy"), (0, "opus"))
         self.assertEqual(self.run_cli("model", "--lane", "build", "--grade", "easy", "--tier", "low",
                                       "--host", "codex"), (0, "gpt-6-luna"))
-        self.assertEqual(self.run_cli("router", "--tier", "high"), (0, "sonnet"))
+        self.assertEqual(self.run_cli("router", "--tier", "low"), (0, "haiku"))
         self.assertEqual(self.run_cli("router", "--host", "codex", "--pin", "m"), (0, "none"))
         self.assertEqual(self.run_cli("model", "--lane", "build", "--grade", "nope")[0], 2)
 
@@ -184,6 +220,16 @@ class CliTest(unittest.TestCase):
             fh.write("plain body, no grade")
         rc, out = self.run_cli("card", card, "--jev", jev)
         self.assertEqual(json.loads(out), {"grade": "easy", "source": "jev"})
+        with open(card, "w") as fh:
+            fh.write("1. Which page?\nNEEDS-INFO")
+        self.assertEqual(self.run_cli("verdict", card)[0], 2)  # a hold needs somewhere to write
+        note = os.path.join(self.tmp.name, "note.md")
+        rc, out = self.run_cli("verdict", card, "--comment", note)
+        self.assertEqual(json.loads(out), {"decision": "needs-info", "grade": None})
+        with open(note) as fh:
+            self.assertIn("1. Which page?", fh.read())
+        rc, out = self.run_cli("verdict", os.path.join(self.tmp.name, "absent.txt"))
+        self.assertEqual((rc, json.loads(out)), (0, {"decision": "accept", "grade": None}))
 
     def test_missing_config_is_fine(self):
         os.environ["FACTORY_CONFIG"] = os.path.join(self.tmp.name, "absent.json")

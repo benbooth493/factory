@@ -113,11 +113,31 @@ done
 : > "$GH_LOG"
 FAKE_LABELS='[]' "$board" claim 3 >/dev/null
 check "claim adds label" "1" "$(grep -c -- '--add-label factory:wip' "$GH_LOG")"
+check "claim leaves other labels alone" "0" "$(grep -c -- '--remove-label' "$GH_LOG" || true)"
 if FAKE_LABELS='["factory:wip"]' "$board" claim 3 >/dev/null 2>&1; then r=0; else r=1; fi
 check "claim refuses when held" "1" "$r"
 check "release reports success" "released #3" "$(FAKE_LABELS='[]' "$board" release 3)"
 if FAKE_LABELS='["factory:wip"]' "$board" release 3 >/dev/null 2>&1; then r=0; else r=1; fi
 check "release fails when the label is still there" "1" "$r"
+
+: > "$GH_LOG"
+FAKE_LABELS='["factory:needs-info"]' "$board" claim 3 >/dev/null
+check "claim drops intake's hold label" "1" "$(grep -c -- '--remove-label factory:needs-info' "$GH_LOG")"
+
+# hold: Backlog, then the comment, then the label, read back
+echo "1. Which page?" > "$tmp/note.md"
+: > "$GH_LOG"
+check "hold reports success" "held #3" "$(FAKE_LABELS='["factory:needs-info"]' "$board" hold 3 "$tmp/note.md")"
+check "hold moves, comments, labels in that order" "item-edit comment edit" \
+  "$(grep -o 'project item-edit\|issue comment\|issue edit' "$GH_LOG" | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//')"
+check "hold uses the board's repo" "3" "$(grep -c -- 'gh issue .* --repo acme/app' "$GH_LOG")"
+if FAKE_LABELS='[]' "$board" hold 3 "$tmp/note.md" >/dev/null 2>&1; then r=0; else r=1; fi
+check "hold fails when the label did not land" "1" "$r"
+: > "$GH_LOG"
+if "$board" hold 999 "$tmp/note.md" >/dev/null 2>&1; then r=0; else r=1; fi
+check "hold posts nothing when the move fails" "1 0" "$r $(grep -c 'issue comment' "$GH_LOG" || true)"
+if "$board" hold 3 "$tmp/absent.md" >/dev/null 2>&1; then r=0; else r=1; fi
+check "hold refuses an empty comment" "1" "$r"
 
 # bounce counting
 check "bounces none" "0" "$(FAKE_LABELS='["bug"]' "$board" bounces 3)"
