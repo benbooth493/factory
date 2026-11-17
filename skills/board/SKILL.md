@@ -46,7 +46,7 @@ Labels: `factory:wip` is the claim mutex (one lane per card).
 (merge policy, migration or Jev veto); waves skip those cards until a human
 merges and moves them, or removes the label.
 `factory:needs-info` marks a card intake sent back to Backlog with a
-question; intake removes it when it accepts the card on a later run.
+question; `board.sh claim` removes it when a lane next takes the card.
 `factory:bounce-N` counts trips back to Build. At `max_bounces` (default 2)
 the next failure goes to Blocked instead. A trip back for a merge conflict
 with the base branch is not counted.
@@ -191,12 +191,14 @@ run picks them up from there. Do not delete branches or worktrees.
    - In shadow mode or when `available` is false, your judgement stands.
 
    **Run intake on each card that passed lint**, as `references/router.md`
-   says: one read-only subagent on the model
-   `route.py router --tier <tier> --host <host> [--pin <pin>]` prints, using
-   the prompt in router.md, then `route.py verdict <reply file>`. On
-   `needs-info` or `reject` the card goes to Backlog with the reply as the
-   comment and the `factory:needs-info` label, and leaves the wave. Skip
-   intake when `route.py router` prints `none`.
+   says: one read-only subagent per card, all launched in a single message,
+   on the model `route.py router --tier <tier> --host <host> [--pin <pin>]`
+   prints, using the prompt in router.md. Then
+   `route.py verdict <reply file> --comment <note file>`. On `needs-info` or
+   `reject`, `board.sh hold <n> <note file>` sends the card to Backlog with
+   the comment and the `factory:needs-info` label, and it leaves the wave.
+   A failed or unreadable intake counts as accept. Skip intake when
+   `route.py router` prints `none`.
 
    **Grade the card** (easy/medium/hard): its own `Difficulty:` line or
    `difficulty:*` label, else Jev's live card_lint answer

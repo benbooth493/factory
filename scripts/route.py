@@ -15,12 +15,14 @@ reading the run flags, and mapping (host, tier, grade, lane) to a model.
 
 Commands:
   route.py args [run args...]          JSON {host, tier, pin} for `run --low|--high --codex[=M]`
-  route.py card <card-file|-> [--jev F] JSON {grade, source}; grade null = ask the router
+  route.py card <card-file|-> [--jev F] JSON {grade, source}; grade null = use intake's grade
   route.py model --lane L [--grade G] [--tier T] [--host H] [--pin M]
                                        print the lane model ("inherit" = session model)
   route.py router [--tier T] [--host H] [--pin M]
-                                       print the router model ("none" = skip the router)
-  route.py verdict <reply-file|->      JSON {decision, grade} from the intake agent's reply
+                                       print the intake model ("none" = skip intake)
+  route.py verdict <reply-file|-> [--comment OUT]
+                                       JSON {decision, grade} from the intake agent's reply;
+                                       a held card's comment is written to OUT
   route.py host                        print the host this shell runs in (claude|codex)
 
 Model precedence for a lane, first match wins:
@@ -141,17 +143,35 @@ def resolve(card: Any, jev: Any = None) -> Dict[str, Optional[str]]:
     return {"grade": None, "source": None}
 
 
-DECISIONS = ("accept", "needs-info", "reject")
+# The verdict line: a decision, then at most a grade. Spaces, underscores and
+# any dash are accepted inside needs-info.
+_DASH = r"\-‐-―"
+VERDICT = re.compile(rf"^(accept|needs[\s_{_DASH}]*info|reject)[\s:*_`{_DASH}]*([a-z]+)?[\s*_`.]*$")
+HEADERS = {"needs-info": "❓ intake: questions before this can be built",
+           "reject": "❓ intake: not building this"}
 
 
 def verdict(reply: Any) -> Dict[str, Optional[str]]:
-    """Intake's last line -> decision and grade. An unreadable reply is an
-    accept with no grade: only a clear needs-info or reject holds a card."""
-    lines = [ln for ln in str(reply).splitlines() if ln.strip()]
-    words = re.findall(r"[a-z-]+", lines[-1].lower()) if lines else []
-    decision = next((w for w in words if w in DECISIONS), "accept")
-    grade = next((g for g in map(norm_grade, words) if g), None)
-    return {"decision": decision, "grade": grade if decision == "accept" else None}
+    """Intake's reply -> decision, grade and the comment for a held card.
+
+    The verdict is the last line that is only a decision (and a grade), so
+    closing fences or a sign-off after it don't hide it, and prose that
+    mentions a decision word doesn't count. Anything else is an accept with
+    no grade, and so is a hold with no text: a card is held only on a clear
+    needs-info or reject that gives a person something to answer.
+    """
+    lines = str(reply).splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        m = VERDICT.match(re.sub(r"^[\s>*_`#]+", "", lines[i]).lower())
+        if not m or (m.group(2) and not norm_grade(m.group(2))):
+            continue
+        body = "\n".join(lines[:i]).strip()
+        if m.group(1) == "accept" or not body:
+            return {"decision": "accept", "grade": norm_grade(m.group(2)), "comment": None}
+        decision = "reject" if m.group(1) == "reject" else "needs-info"
+        tail = "\n\nAnswer here, then move the card back to Ready." if decision == "needs-info" else ""
+        return {"decision": decision, "grade": None, "comment": f"{HEADERS[decision]}\n\n{body}{tail}\n"}
+    return {"decision": "accept", "grade": None, "comment": None}
 
 
 # --- models --------------------------------------------------------------------
@@ -260,7 +280,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         s.add_argument("--tier", default="default", choices=TIERS)
         s.add_argument("--host", default=None, choices=HOSTS)
         s.add_argument("--pin")
-    sub.add_parser("verdict").add_argument("reply", help="the intake agent's reply, or -")
+    v = sub.add_parser("verdict")
+    v.add_argument("reply", help="the intake agent's reply, or -")
+    v.add_argument("--comment", help="write a held card's comment to this file")
     sub.add_parser("host")
     a = p.parse_args(argv)
 
@@ -268,7 +290,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(detect_host())
         return 0
     if a.cmd == "verdict":
-        print(json.dumps(verdict(_read(a.reply))))
+        try:
+            reply = sys.stdin.read() if a.reply == "-" else open(a.reply).read()
+        except OSError:
+            reply = ""  # the intake agent died: accept, as for any unreadable reply
+        out = verdict(reply)
+        comment = out.pop("comment")
+        if comment and not a.comment:
+            print("route: a held card needs --comment <file>", file=sys.stderr)
+            return 2
+        if comment:
+            with open(a.comment, "w") as fh:
+                fh.write(comment)
+        print(json.dumps(out))
         return 0
     if a.cmd == "card":
         jev = _read(a.jev) if a.jev else None

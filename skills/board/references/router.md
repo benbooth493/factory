@@ -24,21 +24,25 @@ Keep these for the whole run, and repeat them in the resume hint.
 Skip this whole step when `$R router --tier T --host H [--pin P]` prints
 `none` (a pinned model works every card; no intake runs).
 
-Run one subagent on the model that command prints, with the prompt below.
-On Codex run the same prompt with `codex exec -m <router model> -`
-(read-only). Save the reply to a file and run `$R verdict <file>`: it
-prints `{"decision", "grade"}` from the last line. A reply it cannot read
-counts as `accept`, so a garbled reply never holds a card.
+Run one read-only subagent per card on the model that command prints, with
+the prompt below. Launch every card's intake in a single message so they run
+in parallel. On Codex run the same prompt with
+`codex exec -m <router model> -` (read-only), in parallel as background
+commands. Save each reply to a file, then:
 
-- **`accept`**: go on to the grade. If the card carries `factory:needs-info`
-  from an earlier run, remove it: `gh issue edit <n> --remove-label factory:needs-info`.
-- **`needs-info` or `reject`**: do not build the card. Post the reply without
-  its last line as a comment that starts `❓ intake:`
-  (`board.sh comment <n> <file>`), then
-  `gh label create factory:needs-info --color d4c5f9 --description "Intake has a question for a person" 2>/dev/null || true`,
-  `gh issue edit <n> --add-label factory:needs-info` and
-  `board.sh move <n> backlog`. A person answers on the issue and moves the
-  card back to Ready; the next run reads the answer and judges it again.
+`$R verdict <reply file> --comment <note file>` prints `{"decision", "grade"}`.
+
+- **`accept`**: go on to the grade. An agent that failed, a missing reply
+  file, or a reply with no clear verdict all print `accept` with a null
+  grade, so a broken intake never holds a card. If the agent failed to
+  launch (the model is not available here), say so once in the wave line.
+- **`needs-info` or `reject`**: do not build the card. The script wrote the
+  comment to the note file, without the verdict line. Run
+  `board.sh hold <n> <note file>`: it moves the card to Backlog, posts the
+  comment and adds `factory:needs-info`. If it fails, stop and show its
+  message. A person answers on the issue and moves the card back to Ready;
+  the next run reads the answer and judges it again. `board.sh claim`
+  removes the label when a lane takes the card.
 
 ## 3. Grade the card, first answer wins
 

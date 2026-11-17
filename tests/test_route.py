@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 
 import route  # noqa: E402
 
-# (host, tier) -> (router, easy, medium, hard), as the README promises.
+# (host, tier) -> (intake, easy, medium, hard), as the README promises.
 EXPECTED = {
     ("claude", "default"): ("fable", "sonnet", "opus", "inherit"),
     ("claude", "low"): ("haiku", "haiku", "sonnet", "opus"),
@@ -137,20 +137,39 @@ class CardGradeTest(unittest.TestCase):
 
 
 class VerdictTest(unittest.TestCase):
-    def test_last_line_decides(self):
+    def test_decision_and_grade(self):
+        q = "1. Which page?\n"
         for reply, want in [
             ("looks fine\nACCEPT hard", ("accept", "hard")),
             ("**accept** easy\n\n", ("accept", "easy")),
-            ("hard", ("accept", "hard")),  # a bare grade, as the old router replied
-            ("1. Which page?\nNEEDS-INFO", ("needs-info", None)),
+            ("ACCEPT: medium.", ("accept", "medium")),
+            (q + "NEEDS-INFO", ("needs-info", None)),
+            (q + "NEEDS INFO", ("needs-info", None)),
+            (q + "needs_info", ("needs-info", None)),
+            (q + "NEEDS\u2011INFO", ("needs-info", None)),  # a non-ASCII hyphen
+            (q + "NEEDS-INFO\n```\n---\n", ("needs-info", None)),  # trailing fence and rule
+            (q + "NEEDS-INFO\nThanks!", ("needs-info", None)),  # a sign-off after it
             ("Duplicate of #4\nREJECT hard", ("reject", None)),
-            ("NEEDS-INFO?\nACCEPT medium", ("accept", "medium")),  # only the last line counts
-            ("I could not read the issue", ("accept", None)),  # garbled never holds a card
+            (q + "NEEDS-INFO\nACCEPT medium", ("accept", "medium")),  # the last verdict wins
+            # prose that mentions a decision is not one
+            ("I would reject this if X; otherwise accept medium", ("accept", None)),
+            ("Reject the upload or truncate it?", ("accept", None)),
+            ("NEEDS-INFO", ("accept", None)),  # a hold with nothing to answer
+            ("I could not read the issue", ("accept", None)),
+            ("hard", ("accept", None)),
             ("", ("accept", None)),
         ]:
             with self.subTest(reply=reply):
                 got = route.verdict(reply)
                 self.assertEqual((got["decision"], got["grade"]), want)
+                self.assertEqual(got["comment"] is None, want[0] == "accept")
+
+    def test_comment_drops_the_verdict_line(self):
+        got = route.verdict("1. Which page?\n2. What limit?\nNEEDS-INFO\n")["comment"]
+        self.assertTrue(got.startswith("❓ intake:"))
+        self.assertIn("2. What limit?", got)
+        self.assertNotIn("NEEDS-INFO", got)
+        self.assertNotIn("Ready", route.verdict("Duplicate of #4\nREJECT")["comment"])
 
 
 class CliTest(unittest.TestCase):
@@ -203,8 +222,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(json.loads(out), {"grade": "easy", "source": "jev"})
         with open(card, "w") as fh:
             fh.write("1. Which page?\nNEEDS-INFO")
-        rc, out = self.run_cli("verdict", card)
+        self.assertEqual(self.run_cli("verdict", card)[0], 2)  # a hold needs somewhere to write
+        note = os.path.join(self.tmp.name, "note.md")
+        rc, out = self.run_cli("verdict", card, "--comment", note)
         self.assertEqual(json.loads(out), {"decision": "needs-info", "grade": None})
+        with open(note) as fh:
+            self.assertIn("1. Which page?", fh.read())
+        rc, out = self.run_cli("verdict", os.path.join(self.tmp.name, "absent.txt"))
+        self.assertEqual((rc, json.loads(out)), (0, {"decision": "accept", "grade": None}))
 
     def test_missing_config_is_fine(self):
         os.environ["FACTORY_CONFIG"] = os.path.join(self.tmp.name, "absent.json")

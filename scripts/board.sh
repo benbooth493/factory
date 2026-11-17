@@ -22,6 +22,8 @@
 #   bounce <issue> [reason]     record one more bounce (adds factory:bounce-N label);
 #                               reason merge_conflict records nothing
 #   comment <issue> <file|->    post a comment from a file or stdin
+#   hold <issue> <file>         intake's hold: move to Backlog, post the file as a
+#                               comment, add factory:needs-info (claim removes it)
 #
 # Config: $FACTORY_CONFIG, default <repo root>/.claude/factory.json
 # Needs: gh (with the `project` scope), jq. Bash 3.2 compatible.
@@ -32,6 +34,7 @@ set -euo pipefail
 
 WIP_LABEL="factory:wip"
 HOLD_LABEL="factory:needs-human"
+INFO_LABEL="factory:needs-info"
 BOUNCE_PREFIX="factory:bounce-"
 
 die() { echo "board: $*" >&2; exit 1; }
@@ -253,11 +256,17 @@ issue_labels() {
 cmd_claim() {
   [ $# -eq 1 ] || die "usage: claim <issue>"
   ensure_label "$WIP_LABEL" "fbca04" "A factory lane is working on this"
-  if issue_labels "$1" | jq -e --arg l "$WIP_LABEL" 'index($l)' >/dev/null; then
+  local labels
+  labels=$(issue_labels "$1") || labels='[]'
+  if jq -e --arg l "$WIP_LABEL" 'index($l)' <<<"$labels" >/dev/null; then
     echo "#$1 is already claimed" >&2
     exit 1
   fi
   gh issue edit "$1" --repo "$(repo)" --add-label "$WIP_LABEL" >/dev/null
+  # A card a lane is about to work has had intake's question answered.
+  if jq -e --arg l "$INFO_LABEL" 'index($l)' <<<"$labels" >/dev/null; then
+    gh issue edit "$1" --repo "$(repo)" --remove-label "$INFO_LABEL" >/dev/null 2>&1 || true
+  fi
   echo "claimed #$1"
 }
 
@@ -300,6 +309,20 @@ cmd_comment() {
   else
     gh issue comment "$1" --repo "$(repo)" --body-file "$2"
   fi
+}
+
+cmd_hold() {
+  [ $# -eq 2 ] || die "usage: hold <issue> <file>"
+  [ -s "$2" ] || die "hold: $2 is missing or empty"
+  # Move first: if it fails nothing is posted, so a retry cannot post twice.
+  cmd_move "$1" backlog >/dev/null
+  cmd_comment "$1" "$2" >/dev/null
+  ensure_label "$INFO_LABEL" "d4c5f9" "Intake has a question for a person"
+  gh issue edit "$1" --repo "$(repo)" --add-label "$INFO_LABEL" >/dev/null 2>&1 || true
+  # A failed edit is silent above, so read the label back.
+  issue_labels "$1" | jq -e --arg l "$INFO_LABEL" 'index($l)' >/dev/null \
+    || die "#$1 is in Backlog with its comment but did not get $INFO_LABEL"
+  echo "held #$1"
 }
 
 cmd_doctor() {
@@ -354,6 +377,7 @@ main() {
     bounces) need gh; cmd_bounces "$@" ;;
     bounce) need gh; cmd_bounce "$@" ;;
     comment) need gh; cmd_comment "$@" ;;
+    hold) need gh; cmd_hold "$@" ;;
     column) column_name "$@" ;;
     *) die "unknown command: $cmd" ;;
   esac

@@ -101,10 +101,9 @@ Backlog with the flagged lines instead of being built on a guess.
 Intake reads each Ready card once before it is built. It sends a card it
 cannot build without an answer back to Backlog with its questions and the
 `factory:needs-info` label, and grades the rest easy, medium or hard; the
-run flag picks the model for each grade. The Router column is the model
-intake runs on.
+run flag picks the model for each grade.
 
-| Run | Router | Easy | Medium | Hard |
+| Run | Intake | Easy | Medium | Hard |
 |---|---|---|---|---|
 | `run` | fable | sonnet | opus | session model |
 | `run --low` | haiku | haiku | sonnet | opus |
