@@ -27,6 +27,8 @@ Commands:
   jev.py report                                agreement and spend per point
 
 Key: AI_GATEWAY_API_KEY from the environment or the repo's .env.
+Local: point jev.base_url at a systemone-compatible server (e.g. `jev-style serve`
+on http://127.0.0.1:8765); no key is needed or sent.
 Log: .claude/factory/jev-log.jsonl (keep it out of git).
 Any failure (no key, network, budget reached) returns available=false and
 factory carries on exactly as it would without Jev.
@@ -136,6 +138,7 @@ def settings(cfg: dict) -> dict:
     s.setdefault("base_url", DEFAULT_BASE)
     s.setdefault("model", DEFAULT_MODEL)
     s.setdefault("monthly_budget_usd", 5.0)
+    s.setdefault("max_state_chars", MAX_STATE_CHARS)  # lower it for a local model with a smaller context
     s["points"] = {p: (s.get("points") or {}).get(p, "shadow") for p in POINTS}
     s["thresholds"] = {**DEFAULT_THRESHOLDS, **(s.get("thresholds") or {})}
     return s
@@ -198,18 +201,22 @@ def http_post(url: str, key: str, body: dict, timeout: int = 20) -> dict:
             detail = ""
         raise JevError(f"HTTP {e.code}: {detail}"[:300])
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
-        raise JevError(f"cannot reach AI Gateway: {e}")
+        raise JevError(f"cannot reach {url}: {e}")
 
 
 HTTP: Callable[..., dict] = http_post
 
 
 def ask(s: dict, state: Any, questions: Dict[str, dict]) -> dict:
-    key = secret("AI_GATEWAY_API_KEY")
+    # A base_url other than the gateway is a local systemone-compatible server
+    # (e.g. `jev-style serve`): it needs no key, and must never be sent the gateway's.
+    local = s["base_url"].rstrip("/") != DEFAULT_BASE
+    key = "local" if local else secret("AI_GATEWAY_API_KEY")
     if not key:
         raise JevError("AI_GATEWAY_API_KEY is not set (environment or .env)")
-    if isinstance(state, str) and len(state) > MAX_STATE_CHARS:
-        state = state[:MAX_STATE_CHARS] + "\n[truncated]"
+    limit = int(s["max_state_chars"])
+    if isinstance(state, str) and len(state) > limit:
+        state = state[:limit] + "\n[truncated]"
     body = {"model": s["model"], "state": state, "questions": questions}
     resp = HTTP(s["base_url"].rstrip("/") + "/v1/systemone", key, body)
     if not isinstance(resp, dict) or "answers" not in resp:
