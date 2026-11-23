@@ -84,6 +84,20 @@ class RequestShapeTest(Base):
         jev.decide(cfg(), "risk_veto", "x" * 200_000, "pr-2")
         self.assertLessEqual(len(gw.calls[0][2]["state"]), jev.MAX_STATE_CHARS + 20)
 
+    def test_local_server_needs_no_key_and_never_gets_the_gateway_key(self):
+        local = {"repo": "acme/app", "jev": {"enabled": True, "max_state_chars": 100,
+                                             "base_url": "http://127.0.0.1:8765/"}}
+        for env_key in ("vck_test", None):
+            if env_key is None:
+                os.environ.pop("AI_GATEWAY_API_KEY")
+            gw = self.use({"sensitive": {"type": "noul", "noul": 0.1}})
+            out = jev.decide(local, "risk_veto", "x" * 500, "pr-3")
+            url, key, body = gw.calls[0]
+            self.assertTrue(out["available"])
+            self.assertEqual(url, "http://127.0.0.1:8765/v1/systemone")
+            self.assertEqual(key, "local")
+            self.assertLessEqual(len(body["state"]), 120)
+
 
 class InterpretTest(Base):
     def test_collect_triage_noise(self):

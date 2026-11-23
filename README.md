@@ -222,6 +222,25 @@ factory carries on exactly as it would without it.
 Key: `AI_GATEWAY_API_KEY` in the environment or `.env`. Decisions are logged
 to `.claude/factory/jev-log.jsonl` (keep it out of git).
 
+**Local instead of hosted.** Any server that speaks the same
+`POST /v1/systemone` shape works, for example the open
+[jev-style](https://github.com/lawrence3699/jev-style) models:
+
+```
+uv tool install "jev-style[mlx]"     # Apple silicon; "jev-style[torch]" elsewhere
+jev-style serve                      # 0.8B, http://127.0.0.1:8765
+```
+
+```json
+"jev": { "enabled": true, "base_url": "http://127.0.0.1:8765", "max_state_chars": 60000 }
+```
+
+No key is needed, the gateway key is never sent to it, and calls cost
+nothing. `max_state_chars` (default 90000) trims the state to fit a smaller
+context; the 0.8B takes 25,600 tokens. If the server isn't running, factory
+carries on without it. These models are less accurate than hosted Jev, so
+start a fresh log and let `report` earn each point its way to live again.
+
 ## Config
 
 `.claude/factory.json` in your repo (`onboard` writes it). The minimum:
