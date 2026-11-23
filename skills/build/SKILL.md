@@ -62,14 +62,28 @@ skill (one that waits for the user) inside a lane.
    and go to *Blocked* below rather than guessing.
 7. **Verify.** Run every command in `verify_commands` from the config inside
    the worktree. All must pass. Fix and re-run; do not skip or weaken tests.
-8. **Commit and push.** One or a few commits, one per logical change, with
+8. **Look at the page** (UI cards only). Decide with "Does this card touch
+   UI?" in `${CLAUDE_PLUGIN_ROOT}/skills/qa/references/screenshots.md`, then
+   start the app and shoot as its sections 2 and 3 describe, from the
+   worktree. Pass `--viewports` with the narrowest width a criterion names,
+   or `375x667` when none names one, plus one desktop width, and `--out` a
+   directory in your scratchpad. Add `--themes light,dark` when a criterion
+   mentions dark. Where the change shows text someone typed (a name, a
+   title, an option), look at it once with a long value. Read every image.
+   Fix anything that wraps, clips, overlaps or scrolls sideways, then run
+   steps 7 and 8 again. Tests that match source text don't show this; QA
+   opens the real page and will bounce it. The shots are for you: never
+   commit or push them, and stop the app you started. If the app can't be
+   started or `shoot.mjs` exits 3, don't block: say why in the hand-off and
+   carry on.
+9. **Commit and push.** One or a few commits, one per logical change, with
    messages written to `${CLAUDE_PLUGIN_ROOT}/docs/writing-standard.md`. Save
    each message to a file in your scratchpad, run
    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check-writing.py commit <file>`, fix
    what it reports, then `git commit -F <file>`.
    `git push -u origin HEAD` (use `--force-with-lease` only on your own
    `factory/*` branch, only after a rebase).
-9. **Open or update the PR.** New: `gh pr create --draft --base <base_branch>`
+10. **Open or update the PR.** New: `gh pr create --draft --base <base_branch>`
    with a title and body in the PR format of
    `${CLAUDE_PLUGIN_ROOT}/docs/writing-standard.md` (`Closes #<n>`, `## Why`,
    `## What changed`, `## Acceptance criteria` mapping each criterion to the
@@ -78,7 +92,7 @@ skill (one that waits for the user) inside a lane.
    `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check-writing.py pr <body-file> --title "<title>"`
    and fix what it reports before `gh pr create --body-file <body-file>`. On a bounce, push to the same branch and comment on the PR
    with what changed per feedback point.
-10. **Hand off.** Comment on the issue:
+11. **Hand off.** Comment on the issue:
 
     ```
     🔨 Build done → QA
@@ -87,6 +101,7 @@ skill (one that waits for the user) inside a lane.
     Criteria → evidence:
     - [x] <criterion>: <test or file>
     Verify: <commands> ✅
+    Rendered: <route> at <widths> ✅ | skipped: <reason> | not applicable (no UI change)
     ```
 
     Then `$B move <n> qa` and `$B release <n>`.

@@ -170,6 +170,10 @@ full-page shots at 1920×1080, 1024×768 and 375×667, pushes them to an
 orphan `factory-evidence` branch (never the PR branch, so they don't land in
 your base branch) and embeds them in its comment, on pass and on fail.
 
+Build looks first: on a UI card it shoots the page at the narrowest width
+the criteria name (375 if none) and fixes what wraps or clips before handing
+over. Those shots are never pushed.
+
 `/factory:ui-refine-loop <route|component>` is separate from the board: it
 asks you a few questions once to write a taste file, then runs bounded
 rounds where a fresh checker runs impeccable's critique and audit and a fresh
