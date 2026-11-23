@@ -212,7 +212,8 @@ run picks them up from there. Do not delete branches or worktrees.
 
    With host `claude` and a Workflow tool, launch the wave as one workflow so
    it shows in `/workflows` with a Build, QA and Review phase per card:
-   `Workflow` with `scriptPath: ${CLAUDE_PLUGIN_ROOT}/workflows/board-wave.js`
+   `Workflow` with `name: "factory:factory-board-wave"` (not `scriptPath`: the
+   tool refuses a path outside the working directory, and the plugin is)
    and `args` as a JSON object (not a string):
 
    ```json
