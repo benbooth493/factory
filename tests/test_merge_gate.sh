@@ -186,6 +186,9 @@ run "auto false holds everything" 4 FAKE_HEAD="$head"
 
 policy_config '.'
 run "default block label do-not-merge" 4 FAKE_HEAD="$head" FAKE_PR_LABELS='["do-not-merge"]'
+# Into a non-default branch GitHub links no closing issue; the card comes from factory/3.
+run "card label read from the branch name" 4 FAKE_HEAD="$head" FAKE_LABELS='["do-not-merge"]'
+held "branch card do-not-merge"
 policy_config '.merge_policy.require_labels = ["approved-by-owner"]'
 run "missing required label" 4 FAKE_HEAD="$head"
 run "required label present" 0 FAKE_HEAD="$head" FAKE_PR_LABELS='["approved-by-owner"]'
