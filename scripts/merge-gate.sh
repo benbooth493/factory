@@ -135,8 +135,11 @@ fi
 
 # 4. Merge policy. Labels come from the PR and every issue it closes, so a
 #    card's kind:* label counts even when the PR itself carries none.
+#    GitHub links closing issues only on PRs into the default branch, so the
+#    card is also read from the factory/<n> branch name.
 labels=$(jq -c '[.labels[]?.name]' <<<"$view")
-for issue in $(jq -r '.closingIssuesReferences[]?.number' <<<"$view"); do
+card=$(jq -r '.headRefName | capture("^factory/(?<n>[0-9]+)(-|$)").n // empty' <<<"$view")
+for issue in $( { jq -r '.closingIssuesReferences[]?.number' <<<"$view"; echo "$card"; } | sort -u); do
   more=$(gh issue view "$issue" --repo "$repo" --json labels --jq '[.labels[].name]' 2>/dev/null || echo '[]')
   labels=$(jq -cn --argjson a "$labels" --argjson b "$more" '$a + $b | unique')
 done
